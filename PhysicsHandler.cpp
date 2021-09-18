@@ -6,11 +6,11 @@
 #include <tracy/Tracy.hpp>
 #include <thread>
 #include <mutex>
+#include "globals.h"
 
 const char _physics_frame[] = "Physics Tick";
 
 void PhysicsHandler::OnStart() {
-
     {
     Model tempmodel;
     tempmodel.LoadModel("resource/node.obj");
@@ -21,6 +21,7 @@ void PhysicsHandler::OnStart() {
     meshrenderer->Load(m_NodeMeshHandel, m_NodeProp);
 
     gizmodrawer = std::static_pointer_cast<GizmoDrawer>(Game->scene->GetRenderer("GizmoDrawer"));
+    PhysicsThreadPool.sleep_duration = 0;
 }
 
 PhysicsHandler::~PhysicsHandler() {
@@ -34,7 +35,7 @@ void PhysicsHandler::EachFrame() {
 
     if (!stop) {
         if (!physicsthread.joinable()) {
-            physicsthread = std::thread(DoPhysics, PhysicsCtx(usingBodiesArray, m_Bodies, pause, stop, TS, time_passed));
+            physicsthread = std::thread(DoPhysics, PhysicsCtx(usingBodiesArray, m_Bodies, pause, stop, TS, time_passed, average_tick_time));
         }
     } else {
         if (physicsthread.joinable()) {
@@ -44,10 +45,10 @@ void PhysicsHandler::EachFrame() {
 }
 
 void PhysicsHandler::DrawUI() {
-
+    auto tt = average_tick_time.load();
+    ImGui::Text("Tick time: %fms | TPS: %f", tt * 1000.0, 1.0/tt);
     ImGui::Text("Time passed: %fs", time_passed.load());
     if (ImGui::Button("Pause/Unpause")) {
-
         pause = (pause != 0) ? 0 : -1;
     }
     if (ImGui::Button("Single tick")) {
@@ -66,15 +67,25 @@ void PhysicsHandler::DrawUI() {
             ImGui::SliderFloat("Drag", &f, 0.00001f, 1.0f, "%.6f", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
             m_Bodies[i]->drag.store(f);
             for (size_t j = 0; j < m_Bodies[i]->body.Nodes.size(); j++) {
-                if (ImGui::TreeNode(&m_Bodies[i]->body.Nodes[j].imguiopen, "Node %d", j)) {
-                    ImGui::Text("Position: %f, %f, %f", m_Bodies[i]->body.Nodes[j].position.x, m_Bodies[i]->body.Nodes[j].position.y, m_Bodies[i]->body.Nodes[j].position.z);
-                    ImGui::Text("Force: %f, %f, %f", m_Bodies[i]->body.Nodes[j].force.x, m_Bodies[i]->body.Nodes[j].force.y, m_Bodies[i]->body.Nodes[j].force.z);
-                    ImGui::Text("Velocity: %f, %f, %f", m_Bodies[i]->body.Nodes[j].velocity.x, m_Bodies[i]->body.Nodes[j].velocity.y, m_Bodies[i]->body.Nodes[j].velocity.z);
-                    if (ImGui::Checkbox("Draw connections", &m_Bodies[i]->body.Nodes[j].drawconnections)) {
-                        m_Bodies[i]->CopyBack();
+                Node& node = m_Bodies[i]->body.Nodes[j];
+                if (ImGui::TreeNode(&node.imguiopen, "Node %d", j)) {
+                    ImGui::Text("Position: %f, %f, %f", node.position.x, node.position.y, node.position.z);
+                    ImGui::Text("Force: %f, %f, %f", node.force.x, node.force.y, node.force.z);
+                    ImGui::Text("Velocity: %f, %f, %f", node.velocity.x, node.velocity.y, node.velocity.z);
+                    ImGui::Text("Connection count: %d", node.connections.size());
+                    if(ImGui::Button("Print connections")) {
+                        printf("____________________________\n");
+                        for (auto& c : node.connections) {
+                            printf("[%*d, %*d]\n", 5, (*m_Bodies[i]->body.Connections)[c].node1, 5, (*m_Bodies[i]->body.Connections)[c].node2);
+                        }
                     }
-                    if (ImGui::Checkbox("Lock", &m_Bodies[i]->body.Nodes[j].islocked)) {
-                        m_Bodies[i]->CopyBack();
+                    bool tmpbool = node.drawconnections.load();
+                    if (ImGui::Checkbox("Draw connections", &tmpbool)) {
+                        node.drawconnections.store(tmpbool);
+                    }
+                    tmpbool = node.islocked.load();
+                    if (ImGui::Checkbox("Lock", &tmpbool)) {
+                        node.islocked.store(tmpbool);
                     };
                     ImGui::TreePop();
                 }
@@ -88,8 +99,9 @@ void PhysicsHandler::DrawUI() {
 void PhysicsHandler::DrawBodies() {
     usingBodiesArray.lock();
     for (size_t i = 0; i < m_Bodies.size(); i++) {
-        m_Bodies[i]->bodyMutex.lock();
-        std::vector<Connection*> drawConnections = {};
+        auto& b = *m_Bodies[i];
+        b.bodyMutex.lock();
+        std::vector<uint> drawConnections = {};
         size_t j = 0;
         for (auto& node : m_Bodies[i]->body.Nodes) {
             glm::mat4 tmpmat = glm::mat4(1);
@@ -112,7 +124,7 @@ void PhysicsHandler::DrawBodies() {
         std::sort(drawConnections.begin(), drawConnections.end());
 
         size_t head = 0;
-        Connection* last = nullptr;
+        uint last = (uint)-1;
         for (auto& con : drawConnections) {
             if (con != last) {
                 drawConnections[head] = con;
@@ -122,9 +134,9 @@ void PhysicsHandler::DrawBodies() {
         }
         drawConnections.resize(head);
 
-        for (auto& connection : drawConnections) {
-            glm::vec3 point1 = connection->node1->position;
-            glm::vec3 point2 = connection->node2->position;
+        for (uint& c : drawConnections) {
+            glm::vec3 point1 = b.body.Nodes[(*b.body.Connections)[c].node1].position;
+            glm::vec3 point2 = b.body.Nodes[(*b.body.Connections)[c].node2].position;
             gizmodrawer->DrawLine(point1, point2);
         }
         m_Bodies[i]->bodyMutex.unlock();
@@ -133,6 +145,7 @@ void PhysicsHandler::DrawBodies() {
 }
 
 float PhysicsHandler::CalculateEnergy(const SoftBody& body) const {
+    ZoneScoped
     double energy = 0;
     for (auto& node : body.body.Nodes) {
         energy += powf(glm::length(node.velocity), 2.0f) * node.mass/2.0f;
@@ -149,10 +162,8 @@ void PhysicsHandler::AddSoftBody(Ref<SoftBody> body) {
     m_Collapsed.push_back(true);
 }
 
-void PhysicsHandler::CalculateForces(const SoftBody& body, SoftRepresentation& source) {
+void PhysicsHandler::CalculateForces(std::function<glm::vec3(const Connection*, const std::vector<Node>&)> forceFunction, SoftRepresentation& source, const float d) {
     ZoneScoped;
-    const float d = body.drag.load();
-
     for (auto& node : source.Nodes) {
         //Apply a force that's in the opposite direction of the velocity
         node.force = node.velocity * d * -1.0f;
@@ -162,65 +173,106 @@ void PhysicsHandler::CalculateForces(const SoftBody& body, SoftRepresentation& s
     //Get forces from nodes
     {
     ZoneScopedN("Connection calculations");
-    for (auto& c : source.Connections) {
-        glm::vec3 force = body.ForceCalculator(&c);
-        c.node1->force += force;
-        c.node2->force += -1.0f * force;
+    PhysicsThreadPool.parallelize_loop(0, (*source.Connections).size(), [&forceFunction, &source](uint start, uint end) -> void {
+        ZoneScopedN("loopchunk");
+        for (uint i = start; i < end; i++) {
+            auto& c = (*source.Connections)[i];
+            glm::vec3 force = forceFunction(&c, source.Nodes);
+            source.Nodes[c.node1].force += force;
+            source.Nodes[c.node2].force += -1.0f * force;
+        }
+    }, PhysicsThreadPool.get_thread_count() - 2);
     }
-    }
-    //Breaking force, speed-dependant
 }
 
-void PhysicsHandler::TickUpdate(SoftBody& body, const double ts) {
+void PhysicsHandler::DoTimeStep(const SoftRepresentation& repr, const SoftRepresentation& derivative, SoftRepresentation& out, const double ts) {
     ZoneScoped;
-    //Copy over the data
-    {
-    ZoneScopedN("Update velocity");
-    for (auto& node : body.workbody.Nodes) {
-        if (node.islocked) continue;
-        node.position += node.velocity * (float)ts;
-        node.velocity += (((float)ts * node.force)/node.mass);
+    for (size_t i = 0; i < repr.Nodes.size(); i++) {
+        auto& rNode = repr.Nodes[i];
+        auto& dNode = derivative.Nodes[i];
+        auto& oNode = out.Nodes[i];
+        oNode.islocked.store(rNode.islocked.load());
+        if (rNode.islocked) continue;
+        oNode.position = rNode.position + dNode.velocity * (float)ts;
+        oNode.velocity = rNode.velocity + (((float)ts * dNode.force)/rNode.mass);
     }
-    }
-    //Clear forces of all nodes
-    CalculateForces(body, body.workbody);
 }
 
 void PhysicsHandler::DoPhysics(PhysicsCtx ctx) {
+    SoftRepresentation tmp;
+    std::deque<double> tick_times(30, 0.0);
+
+    using clock = std::chrono::high_resolution_clock;
+
     while (!ctx.stop) {
         double TS = ctx.TS;
         if (ctx.pause == 0) {std::this_thread::sleep_for(std::chrono::milliseconds(7)); continue;}
         if (ctx.pause > 0) ctx.pause--;
         FrameMarkStart(_physics_frame);
+        auto tick_time = clock::now();
         for (auto body : ctx.Bodies) {
-            body->workbodyMutex.lock();
             ZoneScopedN("Single body physics");
             std::vector<glm::vec3> combinedVelocities(body->workbody.Nodes.size());
+            std::vector<glm::vec3> combinedForces(body->workbody.Nodes.size());
             std::vector<glm::vec3> firstPositions(body->workbody.Nodes.size());
-            
+            std::vector<glm::vec3> firstVelocities(body->workbody.Nodes.size());
+
+            const float d = body->drag.load();
+            tmp.Nodes.resize(body->workbody.Nodes.size());
+            tmp.Connections = body->workbody.Connections;
+
+            //K1
             for (size_t i = 0; i < body->workbody.Nodes.size(); i++) {
                 firstPositions[i] = body->workbody.Nodes[i].position;
+                firstVelocities[i] = body->workbody.Nodes[i].velocity;
                 combinedVelocities[i] = body->workbody.Nodes[i].velocity;
+                combinedForces[i] = body->workbody.Nodes[i].force;
+                tmp.Nodes[i].position = body->workbody.Nodes[i].position;
+                tmp.Nodes[i].velocity = body->workbody.Nodes[i].velocity;
+                tmp.Nodes[i].force = body->workbody.Nodes[i].force;
+                tmp.Nodes[i].islocked.store(body->workbody.Nodes[i].islocked);
             }
-            TickUpdate(*body, TS/2.0);
-            for (size_t i = 0; i < body->workbody.Nodes.size(); i++) {
+            DoTimeStep(body->workbody, tmp, tmp, TS/2.0);
+
+            //k2
+            CalculateForces(body->ForceCalculator, tmp, d);
+            for (size_t i = 0; i < tmp.Nodes.size(); i++) {
                 combinedVelocities[i] += 2.0f * body->workbody.Nodes[i].velocity;
+                combinedForces[i] += 2.0f * body->workbody.Nodes[i].force;
             }
-            TickUpdate(*body, TS/2.0);
-            for (size_t i = 0; i < body->workbody.Nodes.size(); i++) {
+            DoTimeStep(body->workbody, tmp, tmp, TS/2.0);
+
+            //K3
+            CalculateForces(body->ForceCalculator, tmp, d);
+            for (size_t i = 0; i < tmp.Nodes.size(); i++) {
                 combinedVelocities[i] += 2.0f * body->workbody.Nodes[i].velocity;
+                combinedForces[i] += 2.0f * body->workbody.Nodes[i].force;
             }
-            TickUpdate(*body, TS);
-            for (size_t i = 0; i < body->workbody.Nodes.size(); i++) {
-                body->workbody.Nodes[i].position = firstPositions[i] + TSf/6.0f * (combinedVelocities[i] + body->workbody.Nodes[i].velocity);
+            DoTimeStep(body->workbody, tmp, tmp, TS);
+
+            //K4
+            CalculateForces(body->ForceCalculator, tmp, d);
+            for (size_t i = 0; i < tmp.Nodes.size(); i++) {
+                if (body->workbody.Nodes[i].islocked) continue;
+                body->workbody.Nodes[i].position = firstPositions[i] + TSf/6.0f * (combinedVelocities[i] + tmp.Nodes[i].velocity);
+                body->workbody.Nodes[i].velocity = firstVelocities[i] + TSf/6.0f * (combinedForces[i] + tmp.Nodes[i].force);
             }
-            body->workbodyMutex.unlock();
+            CalculateForces(body->ForceCalculator, body->workbody, d);
             body->CopyOver();
         }
         FrameMarkEnd(_physics_frame);
         ctx.time_passed += TS;
-        for (auto body : ctx.Bodies) {
-            body->Join();
+
+        //Fixing tick time
+        tick_times.pop_back();
+        double tdiff = std::chrono::duration_cast<std::chrono::microseconds>(clock::now().time_since_epoch() - tick_time.time_since_epoch()).count();
+        tick_times.push_front(tdiff/(1000.0 * 1000.0));
+        double tottime = 0.0;
+        for (auto& time : tick_times) {
+            tottime += time;
         }
+        tottime /= 30.0;
+        ctx.tick_time.store(tottime);
     }
+    PhysicsThreadPool.wait_for_tasks();
 }

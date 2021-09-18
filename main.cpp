@@ -41,27 +41,126 @@ ACTOR_ESSENTIALS(WindowHandler)
 
 };
 
-std::array<std::pair<int, int>, 26> GetAdjacents(int x, int y, int z, uint numpoints) {
-    int xmag = numpoints * numpoints;
-    int ymag = numpoints;
-    int thisnode = x * xmag + y * ymag + z;
-    std::array<std::pair<int, int>, 26> perms;
-    uint head = 0;
-    for (int xd = -1; xd < 2; xd++) {
-        for (int yd = -1; yd < 2; yd++) {
-            for (int zd = -1; zd < 2; zd++) {
-                if (!(xd | yd | zd)) continue;
-                if ((xd+x) < 0 || (yd+y) < 0 || (zd+z) < 0) {perms[head] = {-1, -1};}
-                else if ((xd+x) >= numpoints || (yd+y) >= numpoints || (zd+z) >= numpoints) {perms[head] = {-1, -1};}
-                else {perms[head] = {thisnode, (x+xd) * xmag + (y+yd) * ymag + (z+zd)};}
-                head++;
+void GenerateConnections(uint numpoints, std::vector<std::pair<uint, uint>>& connections) {
+    //2D Sides
+    //XZ
+    for (int zstep = -1; zstep < 2; zstep+=2) {
+        for (int xstep = -1; xstep < 2; xstep+=2) {
+            // printf("[Step Combination] (%*d, %*d, %*d) [XZ]\n", 2, xstep, 2, 0, 2, zstep);
+            for (int xs = 0; xs < numpoints; xs++) {
+                for (int ys = 0; ys < numpoints; ys++) {\
+                    if (((xs == 0 || xs == numpoints-1)) && zstep < 0) continue; //Make sure the corners aren't done multiple times
+                    int ystep = 0;
+                    int x = xs;
+                    int y = ys;
+                    int z = (zstep<0) ? (numpoints-1) : 0;
+                    while (true) {
+                        if (x + xstep < 0 || y + ystep < 0 || z + zstep < 0) break;
+                        if (x + xstep >= numpoints || y + ystep >= numpoints || z + zstep >= numpoints) break;
+                        connections.push_back({x * numpoints * numpoints + y * numpoints + z, (x+xstep) * numpoints * numpoints + (y+ystep) * numpoints + (z+zstep)});
+                        x += xstep;
+                        y += ystep;
+                        z += zstep;
+                    }
+                }
             }
         }
     }
-    return perms;
+    //XY
+    for (int ystep = -1; ystep < 2; ystep+=2) {
+        for (int xstep = -1; xstep < 2; xstep+=2) {
+            for (int xs = 0; xs < numpoints; xs++) {
+                for (int zs = 0; zs < numpoints; zs++) {
+                    if (((xs == 0 || xs == numpoints-1)) && ystep < 0) continue; //Make sure the corners aren't done multiple times
+                    int zstep = 0;
+                    int x = xs;
+                    int y = (ystep<0) ? (numpoints-1) : 0;
+                    int z = zs;
+                    while (true) {
+                        if (x + xstep < 0 || y + ystep < 0 || z + zstep < 0) break;
+                        if (x + xstep >= numpoints || y + ystep >= numpoints || z + zstep >= numpoints) break;
+                        connections.push_back({x * numpoints * numpoints + y * numpoints + z, (x+xstep) * numpoints * numpoints + (y+ystep) * numpoints + (z+zstep)});
+                        x += xstep;
+                        y += ystep;
+                        z += zstep;
+                    }
+                }
+            }
+        }
+    }
+    //ZY
+    for (int ystep = -1; ystep < 2; ystep+=2) {
+        for (int zstep = -1; zstep < 2; zstep+=2) {
+            for (int xs = 0; xs < numpoints; xs++) {
+                for (int zs = 0; zs < numpoints; zs++) {
+                    if (((zs == 0 || zs == numpoints-1)) && ystep < 0) continue; //Make sure the corners aren't done multiple times
+                    int xstep = 0;
+                    int x = xs;
+                    int y = (ystep<0) ? (numpoints-1) : 0;
+                    int z = zs;
+                    while (true) {
+                        if (x + xstep < 0 || y + ystep < 0 || z + zstep < 0) break;
+                        if (x + xstep >= numpoints || y + ystep >= numpoints || z + zstep >= numpoints) break;
+                        connections.push_back({x * numpoints * numpoints + y * numpoints + z, (x+xstep) * numpoints * numpoints + (y+ystep) * numpoints + (z+zstep)});
+                        x += xstep;
+                        y += ystep;
+                        z += zstep;
+                    }
+                }
+            }
+        }
+    }
+    //Diagonals
+    for (int ystep = -1; ystep < 2; ystep+=2) {
+        for (int xstep = -1; xstep < 2; xstep+=2) {
+            for (int zstep = -1; zstep < 2; zstep+=2) {
+                for (int xs = 0; xs < numpoints; xs++) {
+                    for (int zs = 0; zs < numpoints; zs++) {
+                        if ((xs == 0 || xs == numpoints-1) && (zs == 0 || zs == numpoints-1) && ystep<0) continue; //Make sure the corners aren't done multiple times
+                        int x = xs;
+                        int z = zs;
+                        int y = (ystep < 0) ? (numpoints - 1) : 0;
+                        while (true) {
+                            if (x + xstep < 0 || y + ystep < 0 || z + zstep < 0) break;
+                            if (x + xstep >= numpoints || y + ystep >= numpoints || z + zstep >= numpoints) break;
+                            connections.push_back({x * numpoints * numpoints + y * numpoints + z, (x+xstep) * numpoints * numpoints + (y+ystep) * numpoints + (z+zstep)});
+                            x += xstep;
+                            y += ystep;
+                            z += zstep;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    //Extra diagonals
+    for (int ystep = -1; ystep < 2; ystep+=2) {
+        for (int xstep = -1; xstep < 2; xstep+=2) {
+            for (int zstep = -1; zstep < 2; zstep+=2) {
+                for (int ys = 1; ys < numpoints-1; ys++) {
+                    for (int xs = 0; xs < numpoints; xs++) {
+                        int ystepsuntil = (ystep<0) ? ys : numpoints - ys - 1; //Make sure that it isn't covered by the previous diagonals, as to not have duplicates
+                        int xstepsuntil = (xstep<0) ? xs : numpoints - xs - 1;
+                        if (!(xstepsuntil<ystepsuntil)) continue;
+                        int x = xs;
+                        int z = (zstep < 0) ? numpoints-1 : 0;
+                        int y = ys;
+                        while (true) {
+                            if (x + xstep < 0 || y + ystep < 0 || z + zstep < 0) break;
+                            if (x + xstep >= numpoints || y + ystep >= numpoints || z + zstep >= numpoints) break;
+                            connections.push_back({x * numpoints * numpoints + y * numpoints + z, (x+xstep) * numpoints * numpoints + (y+ystep) * numpoints + (z+zstep)});
+                            x += xstep;
+                            y += ystep;
+                            z += zstep;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
- int main(int argc, char**argv) {
+int main(int argc, char**argv) {
 
     Oxide::Log::Init();
     Oxide::Log::GetCoreLogger()->set_level(spdlog::level::trace);
@@ -77,7 +176,6 @@ std::array<std::pair<int, int>, 26> GetAdjacents(int x, int y, int z, uint numpo
     Game->scene->AddActor<DebugCamera>();
 
     std::vector<std::pair<uint, uint>> connections;
-    std::vector<std::pair<int, int>> bloatedConnections;
     float scale = 1.0f;
     uint numpoints = 25;
     std::vector<glm::vec3> points(pow(numpoints,3));
@@ -85,30 +183,23 @@ std::array<std::pair<int, int>, 26> GetAdjacents(int x, int y, int z, uint numpo
         for (int y = 0; y < numpoints; y++) {
             for (int z = 0; z < numpoints; z++) {
                 points[x * numpoints * numpoints + y * numpoints + z] = glm::vec3(scale/numpoints * x, scale/numpoints * y, scale/numpoints * z);
-                std::array<std::pair<int, int>, 26> perms = GetAdjacents(x, y, z, numpoints);
-                bloatedConnections.insert(bloatedConnections.end(), perms.begin(), perms.end());
+                if (x < numpoints - 1)
+                    connections.push_back({x * numpoints * numpoints + y * numpoints + z, (x + 1) * numpoints * numpoints + y * numpoints + z});
+                if (y < numpoints - 1)
+                    connections.push_back({x * numpoints * numpoints + y * numpoints + z, x * numpoints * numpoints + (y+1) * numpoints + z});
+                if (z < numpoints - 1)
+                    connections.push_back({x * numpoints * numpoints + y * numpoints + z, x * numpoints * numpoints + y * numpoints + z+1});
             }
         }
     }
-    for (size_t i = 0; i < bloatedConnections.size(); i++) {
-        auto& connection = bloatedConnections[i];
-        if (connection.first < 0 || connection.second < 0 || connection.first >= pow(numpoints, 3) || connection.second >= pow(numpoints, 3)) continue;
-        bool bad = false;
-        for (auto& c : connections) {
-            if (c.first == connection.second && c.second == connection.first) {bad = true; break;};
-        }
-        if (bad) continue;
-        connections.push_back(connection);
-    }
-
-    Ref<SoftBody> myBody = SoftBody::Create(points, connections, {}, 0.5/(float)(powf(numpoints, 3.0)));
+    GenerateConnections(numpoints, connections);
+    Ref<SoftBody> myBody = SoftBody::Create(points, connections, {}, 125.0f/((float)(powf(numpoints, 3.0))));
     for (int x = 0; x < numpoints; x++) {
         for (int z = 0; z < numpoints; z++) {
-            myBody->workbody.Nodes[x * numpoints * numpoints + numpoints * (0) + z].islocked = true;
+            myBody->workbody.Nodes[x * numpoints * numpoints + numpoints * (0) + z].islocked.store(true);
         }
     }
     ph->AddSoftBody(myBody);
     // myBody->Nodes[38].position = glm::vec3(10, 0, 0);
-
     Game->Start();
 }

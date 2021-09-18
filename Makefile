@@ -1,5 +1,5 @@
 links = -lz -lGL -lGLU -lGLEW -lglfw3 -lrt -lm -ldl -lX11 -lXdmcp -lIrrXML -lassimp -lpthread -lxcb -lXau
-files = main.cpp PhysicsHandler.cpp SoftBody.cpp Node.cpp Drawer.cpp
+files = main.cpp PhysicsHandler.cpp SoftBody.cpp Drawer.cpp globals.cpp
 
 app: libdebug FORCE
 	sleep 1s
@@ -7,7 +7,7 @@ app: libdebug FORCE
 
 profiling: libprofiling FORCE
 	sleep 1s
-	g++ -o app $(files) $(wildcard Oxide/Oxide/build/*.o) -DTRACY_ENABLE -I vendor/ -I Oxide/Oxide/src/ -I Oxide/Oxide/vendor/ -LOxide/Oxide/vendor/lib -L/usr/local/lib $(links) -std=c++2a -O2 -march=native
+	g++ -o app $(files) $(wildcard Oxide/Oxide/build/*.o) -g -DTRACY_ENABLE -I vendor/ -I Oxide/Oxide/src/ -I Oxide/Oxide/vendor/ -LOxide/Oxide/vendor/lib -L/usr/local/lib $(links) -std=c++2a -O2 -march=native
 
 release: librelease FORCE
 	sleep 1s

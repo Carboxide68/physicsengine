@@ -3,6 +3,7 @@
 #include "SoftBody.h"
 #include "Drawer.h"
 #include <atomic>
+#include <thread_pool/thread_pool.hpp>
 
 struct PhysicsCtx {
 
@@ -13,6 +14,8 @@ struct PhysicsCtx {
     std::atomic_bool& stop;
     std::atomic<double>& TS;
     std::atomic<double>& time_passed;
+
+    std::atomic<double>& tick_time;
 
 };
 
@@ -28,6 +31,7 @@ public:
     void AddSoftBody(Ref<SoftBody> body);
     std::atomic<double> time_passed = 0.0;
     std::atomic<double> TS = 0.0001;
+    std::atomic<double> average_tick_time = 1.0f;
 
 private:
 
@@ -52,8 +56,9 @@ private:
     Ref<GizmoDrawer> gizmodrawer;
 
     static void DoPhysics(PhysicsCtx ctx);
+    static void DoTimeStep(const SoftRepresentation& repr, const SoftRepresentation& derivative, SoftRepresentation& out, const double ts);
     static void TickUpdate(SoftBody& body, const double ts);
-    static void CalculateForces(const SoftBody& body, SoftRepresentation& source);
+    static void CalculateForces(std::function<glm::vec3(const Connection*, const std::vector<Node>&)> ForceFunc, SoftRepresentation& source, const float drag);
 
 ACTOR_ESSENTIALS(PhysicsHandler)
 

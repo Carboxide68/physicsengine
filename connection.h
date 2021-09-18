@@ -4,13 +4,13 @@
 #include <glm/geometric.hpp>
 
 struct Connection {
-    Node* node1 = nullptr;
-    Node* node2 = nullptr;
+    uint node1 = (uint)-1;
+    uint node2 = (uint)-1;
 
     double neutrallen = 0.0;
 
-    inline float GetLength() const noexcept {
-        if (!node1 || !node2) return 0.0; 
-        return glm::length(node1->position - node2->position);
+    inline float GetLength(const std::vector<Node>& nodes) const noexcept {
+        if (node1 == (uint)-1 || node2 == (uint)-1) return 0.0; 
+        return glm::length(nodes[node1].position - nodes[node2].position);
     }
 };
