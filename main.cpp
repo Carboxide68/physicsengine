@@ -177,7 +177,12 @@ int main(int argc, char**argv) {
 
     std::vector<std::pair<uint, uint>> connections;
     float scale = 1.0f;
-    uint numpoints = 25;
+    float weight = 0.1f;
+    uint numpoints = 5;
+    if (argc == 3) {
+        numpoints = std::stoi(argv[1]);
+        weight = std::stof(argv[2]);
+    }
     std::vector<glm::vec3> points(pow(numpoints,3));
     for (int x = 0; x < numpoints; x++) {
         for (int y = 0; y < numpoints; y++) {
@@ -193,7 +198,7 @@ int main(int argc, char**argv) {
         }
     }
     GenerateConnections(numpoints, connections);
-    Ref<SoftBody> myBody = SoftBody::Create(points, connections, {}, 125.0f/((float)(powf(numpoints, 3.0))));
+    Ref<SoftBody> myBody = SoftBody::Create(points, connections, {}, weight);
     for (int x = 0; x < numpoints; x++) {
         for (int z = 0; z < numpoints; z++) {
             myBody->workbody.Nodes[x * numpoints * numpoints + numpoints * (0) + z].islocked.store(true);
