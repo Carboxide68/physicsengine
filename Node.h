@@ -4,49 +4,38 @@
 #include <vector>
 #include <atomic>
 
-struct Connection;
+struct NodeData {
 
-class Node {
-public:
+    NodeData() : is_locked(false) {}
 
-    Node() {
-        islocked.store(false);
-        drawconnections.store(false);
-        imguiopen.store(false);
+    NodeData(const NodeData& other) {
+        is_locked.store(other.is_locked.load());
     }
 
-    Node(const Node& other) {
-        position = other.position;
-        velocity = other.velocity;
-        force = other.force;
-        connections = other.connections;
-        mass = other.mass;
-        islocked.store(other.islocked.load());
-        drawconnections.store(other.drawconnections.load());
-        imguiopen.store(other.imguiopen.load());
+    NodeData& operator=(const NodeData& other) {
+        if (this == &other) return *this;
+        node = other.node;
+        is_locked.store(other.is_locked.load());
+        draw_connections = other.draw_connections;
+        imgui_open = other.imgui_open;
+        return *this;
     }
 
-    void operator=(const Node& other) {
-        position = other.position;
-        velocity = other.velocity;
-        force = other.force;
-        connections = other.connections;
-        mass = other.mass;
-        islocked.store(other.islocked.load());
-        drawconnections.store(other.drawconnections.load());
-        imguiopen.store(other.imguiopen.load());
-    }
+    uint node;
 
-    glm::vec3 velocity = glm::vec3(0);
-    glm::vec3 force = glm::vec3(0);
-    glm::vec3 position = glm::vec3(0);
+    std::atomic<bool> is_locked;
+    bool draw_connections = false;
+    bool imgui_open = false;
 
-    float mass = 0.004f;
-    std::atomic_bool islocked;
+};
 
+struct Node {
+
+    glm::vec3 position;
+    glm::vec3 velocity;
+    glm::vec3 acceleration;
+
+    float mass;
     std::vector<uint> connections = {};
-
-    std::atomic_bool imguiopen;
-    std::atomic_bool drawconnections;
 
 };

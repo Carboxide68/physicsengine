@@ -5,17 +5,19 @@
 #include <atomic>
 #include <thread_pool/thread_pool.hpp>
 
+extern thread_pool PhysicsThreadPool;
+
 struct PhysicsCtx {
 
-    std::mutex& BodyMtx;
     std::vector<Ref<SoftBody>>& Bodies;
+    std::mutex& executing;
 
-    std::atomic_int& pause;
-    std::atomic_bool& stop;
-    std::atomic<double>& TS;
-    std::atomic<double>& time_passed;
+    std::atomic<int>& run;
+    std::atomic<bool>& stop;
+    std::atomic<float>& TS;
+    std::atomic<float>& time_passed;
 
-    std::atomic<double>& tick_time;
+    std::atomic<float>& tick_time;
 
 };
 
@@ -29,36 +31,38 @@ public:
     void EachFrame() override;
 
     void AddSoftBody(Ref<SoftBody> body);
-    std::atomic<double> time_passed = 0.0;
-    std::atomic<double> TS = 0.0001;
-    std::atomic<double> average_tick_time = 1.0f;
+    std::atomic<float> time_passed {0.0};
+    std::atomic<float> TS {0.0001};
+    std::atomic<float> average_tick_time {1.0f};
+    std::atomic<int> run {0};
+    std::atomic<bool> stop {true};
+
+    std::mutex executing;
 
 private:
 
-    void DrawBodies();
+
     void DrawUI();
-    float CalculateEnergy(const SoftBody& body) const;
+    void DrawNodeUI(NodeData& nodedata, const Node& node);
 
-    std::vector<Ref<SoftBody>> m_Bodies;
-    std::vector<float> m_DrawScales;
-    std::vector<int> m_Collapsed;
+    void DrawNodes();
+
+    std::vector<Ref<SoftBody>> m_Softbodies;
+
     Mesh m_NodeProp;
+    Ref<MeshRenderer> m_MeshRenderer;
+    Ref<GizmoDrawer> m_GizmoDrawer;
+    uint m_MeshNodeHandle = -1;
 
-    Ref<MeshRenderer> meshrenderer;
-    uint m_NodeMeshHandel = 0;
+    std::thread m_PhysicsThread;
 
-    std::thread physicsthread;
-    std::atomic<int> pause = 0;
-    std::atomic<bool> stop = 0;
+    float m_DrawScale = 0.02f;
 
-    std::mutex usingBodiesArray;
+    static void EngineMain(PhysicsCtx ctx);
+    static void SimulateTick(PhysicsCtx& ctx, Ref<SoftBody> body);
 
-    Ref<GizmoDrawer> gizmodrawer;
-
-    static void DoPhysics(PhysicsCtx ctx);
-    static void DoTimeStep(const SoftRepresentation& repr, const SoftRepresentation& derivative, SoftRepresentation& out, const double ts);
-    static void TickUpdate(SoftBody& body, const double ts);
-    static void CalculateForces(std::function<glm::vec3(const Connection*, const std::vector<Node>&)> ForceFunc, SoftRepresentation& source, const float drag);
+    static void EulerIntegration(Ref<SoftBody> host, std::vector<Node>& base, std::vector<Node>& derivative, std::vector<Node>& out, float TS);
+    static void CalculateVelocities(Ref<SoftBody> host, std::vector<Node>& nodes);
 
 ACTOR_ESSENTIALS(PhysicsHandler)
 

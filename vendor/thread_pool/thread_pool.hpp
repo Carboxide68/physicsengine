@@ -33,10 +33,9 @@
 /**
  * @brief A C++17 thread pool class. The user submits tasks to be executed into a queue. Whenever a thread becomes available, it pops a task from the queue and executes it. Each task is automatically assigned a future, which can be used to wait for the task to finish executing and/or obtain its eventual return value.
  */
-class thread_pool
-{
-    typedef std::uint_fast32_t ui32;
-    typedef std::uint_fast64_t ui64;
+typedef std::uint_fast32_t ui32;
+typedef std::uint_fast64_t ui64;
+class thread_pool {
 
 public:
     // ============================
@@ -48,8 +47,7 @@ public:
      *
      * @param _thread_count The number of threads to use. The default value is the total number of hardware threads available, as reported by the implementation. With a hyperthreaded CPU, this will be twice the number of CPU cores. If the argument is zero, the default value will be used instead.
      */
-    thread_pool(const ui32 &_thread_count = std::thread::hardware_concurrency())
-        : thread_count(_thread_count ? _thread_count : std::thread::hardware_concurrency()), threads(new std::thread[_thread_count ? _thread_count : std::thread::hardware_concurrency()])
+    thread_pool(const ui32 &_thread_count = std::thread::hardware_concurrency()) : thread_count(_thread_count ? _thread_count : std::thread::hardware_concurrency()), threads(new std::thread[_thread_count ? _thread_count : std::thread::hardware_concurrency()])
     {
         create_threads();
     }
@@ -311,7 +309,7 @@ public:
     /**
      * @brief An atomic variable indicating to the workers to pause. When set to true, the workers temporarily stop popping new tasks out of the queue, although any tasks already executed will keep running until they are done. Set to false again to resume popping tasks.
      */
-    std::atomic<bool> paused = false;
+    std::atomic<bool> paused {false};
 
     /**
      * @brief The duration, in microseconds, that the worker function should sleep for when it cannot find any tasks in the queue. If set to 0, then instead of sleeping, the worker function will execute std::this_thread::yield() if there are no tasks in the queue. The default value is 1000.
@@ -408,7 +406,7 @@ private:
     /**
      * @brief An atomic variable indicating to the workers to keep running. When set to false, the workers permanently stop working.
      */
-    std::atomic<bool> running = true;
+    std::atomic<bool> running {true};
 
     /**
      * @brief A queue of tasks to be executed by the threads.
@@ -428,7 +426,7 @@ private:
     /**
      * @brief An atomic variable to keep track of the total number of unfinished tasks - either still in the queue, or running in a thread.
      */
-    std::atomic<ui32> tasks_total = 0;
+    std::atomic<ui32> tasks_total {0};
 };
 
 //                                     End class thread_pool                                     //

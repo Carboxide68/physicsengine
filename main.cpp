@@ -189,11 +189,11 @@ int main(int argc, char**argv) {
             for (int z = 0; z < numpoints; z++) {
                 points[x * numpoints * numpoints + y * numpoints + z] = glm::vec3(scale/numpoints * x, scale/numpoints * y, scale/numpoints * z);
                 if (x < numpoints - 1)
-                    connections.push_back({x * numpoints * numpoints + y * numpoints + z, (x + 1) * numpoints * numpoints + y * numpoints + z});
+                    connections.push_back({x * numpoints * numpoints + y * numpoints + z, (x+1) * numpoints * numpoints + y * numpoints + z});
                 if (y < numpoints - 1)
                     connections.push_back({x * numpoints * numpoints + y * numpoints + z, x * numpoints * numpoints + (y+1) * numpoints + z});
                 if (z < numpoints - 1)
-                    connections.push_back({x * numpoints * numpoints + y * numpoints + z, x * numpoints * numpoints + y * numpoints + z+1});
+                    connections.push_back({x * numpoints * numpoints + y * numpoints + z, x * numpoints * numpoints + y * numpoints + (z+1)});
             }
         }
     }
@@ -201,10 +201,10 @@ int main(int argc, char**argv) {
     Ref<SoftBody> myBody = SoftBody::Create(points, connections, {}, weight);
     for (int x = 0; x < numpoints; x++) {
         for (int z = 0; z < numpoints; z++) {
-            myBody->workbody.Nodes[x * numpoints * numpoints + numpoints * (0) + z].islocked.store(true);
+            myBody->nodedata[x * numpoints * numpoints + numpoints * (0) + z].is_locked.store(true);
         }
     }
+    myBody->Swap();
     ph->AddSoftBody(myBody);
-    // myBody->Nodes[38].position = glm::vec3(10, 0, 0);
     Game->Start();
 }

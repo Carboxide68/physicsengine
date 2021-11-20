@@ -7,7 +7,7 @@ struct Connection {
     uint node1 = (uint)-1;
     uint node2 = (uint)-1;
 
-    double neutrallen = 0.0;
+    float neutrallen = 0.0;
 
     inline float GetLength(const std::vector<Node>& nodes) const noexcept {
         if (node1 == (uint)-1 || node2 == (uint)-1) return 0.0; 
