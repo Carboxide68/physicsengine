@@ -39,8 +39,9 @@ void PhysicsHandler::EachFrame() {
 }
 
 PhysicsHandler::~PhysicsHandler() {
+    ZoneScoped
     stop.store(true);
-    run.store(0);
+    run.store(1);
     if (m_PhysicsThread.joinable()) {
         m_PhysicsThread.join();
     }

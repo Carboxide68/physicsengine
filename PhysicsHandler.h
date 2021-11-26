@@ -59,10 +59,10 @@ private:
     float m_DrawScale = 0.02f;
 
     static void EngineMain(PhysicsCtx ctx);
-    static void SimulateTick(PhysicsCtx& ctx, Ref<SoftBody> body);
+    static void SimulateTick(PhysicsCtx& ctx, Ref<SoftBody> body, float start, float end, uint count, std::atomic<uint>& counter);
 
-    static void EulerIntegration(Ref<SoftBody> host, std::vector<Node>& base, std::vector<Node>& derivative, std::vector<Node>& out, float TS);
-    static void CalculateVelocities(Ref<SoftBody> host, std::vector<Node>& nodes);
+    static void EulerIntegration(Ref<SoftBody> host, std::vector<Node>& base, std::vector<Node>& derivative, std::vector<Node>& out, float TS, float start, float end);
+    static void CalculateVelocities(Ref<SoftBody> host, std::vector<Node>& nodes, float start, float end);
 
 ACTOR_ESSENTIALS(PhysicsHandler)
 
