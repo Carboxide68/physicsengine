@@ -34,6 +34,7 @@ struct Node {
     glm::vec3 position;
     glm::vec3 velocity;
     glm::vec3 acceleration;
+	glm::vec3 force;
 
     float mass;
     std::vector<uint> connections = {};

@@ -32,7 +32,7 @@ void PhysicsHandler::EngineMain(PhysicsCtx ctx) {
                     SimulateTick(ctx, body, 0.f, 1.f, 1, counter);
                 } else {
                     const uint tmp = personal_threads.get_thread_count();
-                    const uint thread_count = (tmp < 6) ? 1 : tmp - 4;
+                    const uint thread_count = (tmp < 2) ? 1 : tmp - 2;
                     {
                     ZoneScopedN("Launch Threads")
                     for (uint i = 0; i < thread_count; i++) {
@@ -199,6 +199,7 @@ void PhysicsHandler::CalculateVelocities(Ref<SoftBody> host, std::vector<Node>& 
     for (uint i = (uint)(nodesize * start); i < (uint)(nodesize * end); i++) {
         auto& n = nodes[i];
         n.acceleration = n.velocity * d * -1.0f/n.mass;
+		n.acceleration += n.force/n.mass;
         for (auto& acc : host->global_accelerations) {
             n.acceleration += acc;
         }

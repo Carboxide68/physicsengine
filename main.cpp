@@ -28,13 +28,51 @@ public:
     }
 
     void EachFrame() override {
+        if (m_PH == NULL) {
+            auto actors = Game->scene->GetActors("PhysicsHandler");
+            if (actors.size() > 0)
+                m_PH = (PhysicsHandler*)actors[0].get();
+            else return;
+        }
+		if (body.get() == NULL) body = m_PH->GetSoftBody(0);
+
         glm::vec3 position = Game->scene->camera->GetPosition();
         glm::vec3 lookingdir = Game->scene->camera->GetLookAt();
+        ImGui::Begin("General");
         ImGui::Text("Looking dir: %f, %f, %f", lookingdir.x, lookingdir.y, lookingdir.z);
         ImGui::Text("Position: %f, %f, %f", position.x, position.y, position.z);
+		ImGui::Text((updated) ? "Updated!" : "Updating...");
+        if (ImGui::SliderFloat("Force", &current_force, -200, 200, "%.3f")) {
+                updated = false;
+        }
+        if (!updated) {
+            tryUpdateNodeforces();  
+        }
+        ImGui::End();
     }
 
+    float current_force = 0.0f;
+    bool updated = false;
+	Ref<SoftBody> body = NULL;
+	uint numpoints = 0;
+
 private:
+
+    void tryUpdateNodeforces() {
+		const glm::vec3 dir = glm::vec3(0, -1, 0);
+        if (!m_PH->executing.try_lock()) return;
+
+        int portion = (int)((float)numpoints/2.0f * 0.6);
+        for (int x = portion; x < numpoints - portion; x++) {
+            for (int z = portion; z < numpoints - portion; z++) {
+				body->worknodes[x * numpoints * numpoints + numpoints * (numpoints - 1) + z].force = current_force * dir;
+            }
+        }
+        updated = true;
+        m_PH->executing.unlock();
+    }
+
+    PhysicsHandler* m_PH = NULL;
 
 ACTOR_ESSENTIALS(WindowHandler)
 
@@ -171,7 +209,7 @@ int main(int argc, char**argv) {
     Game->scene->AddRenderer<MeshRenderer>();
     Game->scene->AddRenderer<GizmoDrawer>();
 
-    Game->scene->AddActor<WindowHandler>();
+    auto wh = Game->scene->AddActor<WindowHandler>();
     Ref<PhysicsHandler> ph = Game->scene->AddActor<PhysicsHandler>();
     Game->scene->AddActor<DebugCamera>();
 
@@ -204,6 +242,7 @@ int main(int argc, char**argv) {
             myBody->nodedata[x * numpoints * numpoints + numpoints * (0) + z].is_locked.store(true);
         }
     }
+    wh->numpoints = numpoints;
     myBody->Swap();
     ph->AddSoftBody(myBody);
     Game->Start();

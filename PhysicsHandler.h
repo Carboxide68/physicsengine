@@ -31,6 +31,7 @@ public:
     void EachFrame() override;
 
     void AddSoftBody(Ref<SoftBody> body);
+	Ref<SoftBody> GetSoftBody(uint index) {return m_Softbodies[index];}
     std::atomic<float> time_passed {0.0};
     std::atomic<float> TS {0.0001};
     std::atomic<float> average_tick_time {1.0f};
