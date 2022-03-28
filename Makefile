@@ -1,31 +1,52 @@
-links = -lz -lGL -lGLU -lGLEW -lglfw3 -lrt -lm -ldl -lX11 -lXdmcp -lIrrXML -lassimp -lpthread -lxcb -lXau
-files = main.cpp PhysicsHandler.cpp SoftBody.cpp Drawer.cpp globals.cpp
+links = -lz -lGL -lGLU -lGLEW -lglfw -lrt -lm -ldl -lX11 -lXdmcp -lpthread -lxcb -lXau
+buildDir = build/
+libDir = lib/
+includes = vendor/
+flags = -std=c++2a -Wall -Wno-unused-function -Wno-format-truncation -Wno-pointer-arith -Wno-sign-compare
+Cflags = -Wall -Wno-unused-function -O2 -march=native
 
-app: libdebug FORCE
-	sleep 1s
-	g++ -o app $(files) $(wildcard Oxide/Oxide/build/*.o) -g -DDEBUG -I vendor/ -I Oxide/Oxide/src/ -I Oxide/Oxide/vendor/ -LOxide/Oxide/vendor/lib -L/usr/local/lib $(links) -std=c++2a
+includes := $(addprefix -I ,$(includes))
+additionalDirs = vendor/tracy/ vendor/imgui/ vendor/imgui/backends/
+dirs := $(dir $(shell find ./src/ -name "*.cpp" -o -name "*.c"))
+uniq = $(if $1,$(firstword $1) $(call uniq,$(filter-out $(firstword $1),$1)))
+dirs := $(call uniq,$(dirs)) $(additionalDirs)
+objFiles := $(patsubst %.cpp, %.o, $(addprefix $(buildDir), $(notdir $(foreach dir, $(dirs), $(wildcard $(dir)*.cpp))))) $(patsubst %.c, %.o, $(addprefix $(buildDir), $(notdir $(foreach dir, $(dirs), $(wildcard $(dir)*.c)))))
 
-profiling: libprofiling FORCE
-	sleep 1s
-	g++ -o app $(files) $(wildcard Oxide/Oxide/build/*.o) -g -DTRACY_ENABLE -I vendor/ -I Oxide/Oxide/src/ -I Oxide/Oxide/vendor/ -LOxide/Oxide/vendor/lib -L/usr/local/lib $(links) -std=c++2a -O2 -march=native
+CC = g++
+VPATH = %.cpp $(dirs)
 
-release: librelease FORCE
-	sleep 1s
-	g++ -o app $(files) $(wildcard Oxide/Oxide/build/*.o) -I vendor/ -I Oxide/Oxide/src/ -I Oxide/Oxide/vendor/ -LOxide/Oxide/vendor/lib -L/usr/local/lib $(links) -std=c++2a -O3 -march=native
+debug: flags := $(flags) -g -DDEBUG
+debug: $(objFiles)
+	$(CC) $(flags) $(includes) $(links) $(objFiles) -o $@
 
-libdebug:
-	$(MAKE) -C Oxide/Oxide/ debug
+release: flags := $(flags) -O3 -march=native
+release: $(objFiles)
+	$(CC) $(flags) $(includes) $(links) $(objFiles) -o $@
 
-libprofiling:
-	$(MAKE) -C Oxide/Oxide/ profiling
+profiling: flags := $(flags) -g -O3 -march=native -DTRACY_ENABLE
+profiling: $(objFiles)
+	$(CC) $(flags) $(includes) $(links) $(objFiles) -o $@
 
-librelease:
-	$(MAKE) -C Oxide/Oxide/ release
+small: flags := $(flags) -Os -march=native
+small: $(objFiles)
+	$(CC) $(flags) $(includes) $(links) $(objFiles) -o $@
 
-precompile: FORCE
-	g++ -o precompiled.cc Sandbox/main.cpp -I Oxide/Oxide/src/ -I Oxide/Oxide/vendor/ -E -std=c++2a
 
-clean: FORCE
-	rm -f Oxide/Oxide/build/* || true
+precompile.cc: flags := $(flags) -E
+precompile.cc: $(objFiles)
 
-FORCE:
+lib: $(libDir)liboxide.a
+
+$(buildDir)%.o: %.cpp
+	$(CC) $(flags) $(includes) -c $< -o $@
+
+$(buildDir)%.o: %.c
+	gcc $(Cflags) $(includes) -c $< -o $@
+
+$(libDir)liboxide.a: $(objFiles)
+	ar rvs $(libDir)liboxide.a $(objFiles)
+
+clean:
+	rm -f build/* || true
+
+# vim: set noexpandtab:
