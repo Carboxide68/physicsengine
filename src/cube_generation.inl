@@ -1,4 +1,12 @@
 
+struct NodeConfig {
+
+    uint box_size;
+    float box_extent;
+    float mass;
+
+};
+
 void GeneratePoints(std::vector<glm::vec3>& points_out, uint box_size, float box_extent) {
 
     float step = box_extent/(box_size-1) * 2;
@@ -187,7 +195,7 @@ void GenerateNodes (
         connection.second = tmp_connections[i].second;
         auto& node1 = nodes[connection.first];
         auto& node2 = nodes[connection.second];
-        connection.normal_length = glm::length(node1.pos - node2.pos);
+        connection.neutral_length = glm::length(node1.pos - node2.pos);
 
         uint head;
         for (head = 0; node1.connections[head] != -1; head++);

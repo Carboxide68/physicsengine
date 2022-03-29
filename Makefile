@@ -1,9 +1,10 @@
 links = -lz -lGL -lGLU -lGLEW -lglfw -lrt -lm -ldl -lX11 -lXdmcp -lpthread -lxcb -lXau
 buildDir = build/
 libDir = lib/
-includes = vendor/
-flags = -std=c++2a -Wall -Wno-unused-function -Wno-format-truncation -Wno-pointer-arith -Wno-sign-compare
-Cflags = -Wall -Wno-unused-function -O2 -march=native
+includes = vendor/ vendor/glm/
+flags = -std=c++2a -Wall -Wno-unused-function -Wno-format-truncation -Wno-pointer-arith\
+		 -Wno-sign-compare -Wno-maybe-uninitialized -Wno-deprecated-enum-enum-conversion
+Cflags = -O2 -march=native
 
 includes := $(addprefix -I ,$(includes))
 additionalDirs = vendor/tracy/ vendor/imgui/ vendor/imgui/backends/
