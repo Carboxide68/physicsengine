@@ -22,6 +22,7 @@ const float PI = 3.1415926535;
 
 GLFWwindow *window;
 int ITERATIONS = 10000;
+int invocations;
 
 size_t node_count = 1000;
 float size = 1.f;
@@ -44,8 +45,8 @@ struct Node {
     glm::vec4 velocity;
     float mass;
 
-    int32_t connections[30];
     uint32_t locked = false;
+    uint32_t padding[2] = {0, 0};
 
 };
 
@@ -53,7 +54,14 @@ struct Connection {
 
     uint first;
     uint second;
-    uint neutral_length;
+    float neutral_length;
+
+};
+
+struct Accumulation {
+
+    glm::vec4 velocity;
+    glm::vec4 force;
 
 };
 
@@ -71,6 +79,15 @@ void benchmarkCube();
 void framebuffer_size_callback(GLFWwindow* window, int width, int height);
 void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
 void mouse_pos_callback(GLFWwindow* window, double xPos, double yPos);
+
+void glfw_error_callback(int error, const char* description) {
+    printf("Glfw Error %d: %s\n", error, description);
+}
+
+void onglerror(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message, const void *userparam) {
+    if (severity == GL_DEBUG_SEVERITY_HIGH) 
+        printf("OpenGL Error! Severity: High | Description: %s\n", message);
+}
 
 int main(int argc, char *argv[]) {
 
@@ -158,8 +175,6 @@ void draw() {
     c_shader->Bind();
     c_shader->SetUniform("u_assembled_matrix", camera.getPerspectiveMatrix() * camera.getViewMatrix());
     glDrawArrays(GL_LINES, 0, connections_size/(sizeof(Connection)) * 2);
-    
-
 }
 
 int init_graphics_env() {
@@ -192,15 +207,15 @@ int init_graphics_env() {
         return -1;
     }
 
-    //glDebugMessageCallback(onglerror, NULL);
-    //glEnable(GL_DEBUG_OUTPUT);
+    glDebugMessageCallback(onglerror, NULL);
+    glEnable(GL_DEBUG_OUTPUT);
+    glEnable(GL_DEBUG_OUTPUT_SYNCHRONOUS);
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_PROGRAM_POINT_SIZE);
 
     int max_compute[3];
     int max_compute_count[3];
-    int invocations;
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 0, &max_compute[0]);
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 1, &max_compute[1]);
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 2, &max_compute[2]);
@@ -226,9 +241,14 @@ int init_graphics_env() {
 
 }
 
+size_t align(size_t alignment, size_t to_be_aligned) {
+
+    return to_be_aligned + alignment - (to_be_aligned % alignment);
+
+}
+
 void benchmarkPendulum() {
     printf("_______________________________________\nTest Pendulum:\n");
-    printf("Node Count: %lu\n", node_count);
 
     std::vector<Connection> connections;
     std::vector<Node> nodes;
@@ -242,15 +262,37 @@ void benchmarkPendulum() {
 
     buffer_state = 1;
 
-    connections_size = connections.size() * sizeof(Connection);
     nodes_size = nodes.size() * sizeof(Node);
-    
-    buffer = Buffer::Create(nodes_size + connections_size, GL_STATIC_DRAW);
-    buffer->subData(nodes.data(), 0, nodes_size);
-    buffer->subData(connections.data(), nodes_size, connections_size);
+    connections_size = connections.size() * sizeof(Connection);
+    const size_t connections_offset = align(128, nodes_size);
 
-    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, buffer->getHandle(), 0, nodes_size);
-    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 1, buffer->getHandle(), nodes_size, connections_size);
+    const size_t n2_offset = align(128, connections_offset + connections_size);
+    const size_t acc_size = nodes.size() * sizeof(Accumulation);
+    const size_t acc_offset = align(128, n2_offset + nodes_size);
+
+    const size_t forces_size = nodes.size() * sizeof(glm::vec4);
+    const size_t forces_offset = align(128, acc_offset + acc_size);
+
+    const size_t buffer_size = forces_offset + forces_size;
+
+    buffer = Buffer::Create(buffer_size, GL_STATIC_DRAW);
+    buffer->subData(nodes.data(), 0, nodes_size);
+    buffer->subData(connections.data(), connections_offset, connections_size);
+
+    //Nodes
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, buffer->getHandle(),
+            0, nodes_size);
+    //Connections
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 1, buffer->getHandle(), 
+            connections_offset, connections_size);
+    //BaseNodes
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 4, buffer->getHandle(),
+            n2_offset, nodes_size);
+    //Combined
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 5, buffer->getHandle(),
+            acc_offset, acc_size);
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 6, buffer->getHandle(),
+            forces_offset, forces_size);
 
     energy_buffer = Buffer::Create(sizeof(float) * 3, GL_DYNAMIC_READ);
     glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 2, energy_buffer->getHandle(), 0, sizeof(float) * 3);
@@ -259,16 +301,16 @@ void benchmarkPendulum() {
     Ref<Shader> energy = Shader::Create("src/energy_shader.os");
     energy->Bind();
     energy->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    energy->SetUniform("K", 98);
-    glDispatchCompute(2, 1, 1);
+    energy->SetUniform("K", 98.f);
+    glDispatchCompute(1, 1, 1);
     float energies_before[3];
     energy_buffer->getContents(energies_before, 0, sizeof(float) * 3);
 
-    Ref<Shader> compute = Shader::Create("src/physics.os");
+    Ref<Shader> compute = Shader::Create("src/physics_second.os");
     compute->Bind();
     compute->SetUniform("drag", 0.1f);
     compute->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    compute->SetUniform("K", 98);
+    compute->SetUniform("K", 98.f);
     compute->SetUniform("TS", TS);
 
     {
@@ -276,14 +318,13 @@ void benchmarkPendulum() {
     ZoneScopedN("pendulum_cpu");
     
     for (int i = 0; i < ITERATIONS; i++) {
-        TracyGpuZone("pendulum_iteration");
-        glDispatchCompute(node_count, 1, 1);
+        glDispatchCompute(1, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
     glFinish();
     TracyGpuCollect;
     }
-    buffer->getContents(nodes.data(), connections_size, nodes_size);
+    buffer->getContents(nodes.data(), 0, nodes_size);
     for (auto& node : nodes) {
         
         if (
@@ -305,22 +346,21 @@ void benchmarkPendulum() {
     float energies_after[3];
     energy->Bind();
     energy->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    energy->SetUniform("K", 98);
-    glDispatchCompute(2, 1, 1);
+    energy->SetUniform("K", 98.f);
+    glDispatchCompute(1, 1, 1);
     energy_buffer->getContents(energies_after, 0, sizeof(float) * 3);
 
     float energies_diff[4];
-    energies_diff[0] = energies_before[0] - energies_after[0];
-    energies_diff[1] = energies_before[1] - energies_after[1];
-    energies_diff[2] = energies_before[2] - energies_after[2];
-    energies_diff[0] = energies_diff[0] + energies_diff[1] + energies_diff[2];
+    energies_diff[0] = energies_after[0] - energies_before[0];
+    energies_diff[1] = energies_after[1] - energies_before[1];
+    energies_diff[2] = energies_after[2] - energies_before[2];
+    energies_diff[3] = energies_diff[0] + energies_diff[1] + energies_diff[2];
 
     printf("Energies difference:\n\tKinetic: %f\n\tSpring: %f\n\tGravitational: %f\n\tTotal: %f\n",
             energies_diff[0],
             energies_diff[1],
             energies_diff[2],
             energies_diff[3]);
-
 }
 
 
@@ -342,21 +382,35 @@ void benchmarkSheet() {
 
     buffer_state = 2;
     
-    buffer = Buffer::Create(nodes_size + connections_size, GL_STATIC_DRAW);
+    const size_t acc_size = nodes.size() * sizeof(Accumulation);
+    const size_t forces_size = nodes.size() * sizeof(glm::vec4);
+    const size_t buffer_size = nodes_size * 2 + acc_size + forces_size + connections_size;
+
+    buffer = Buffer::Create(buffer_size, GL_STATIC_DRAW);
     buffer->subData(nodes.data(), 0, nodes_size);
     buffer->subData(connections.data(), nodes_size, connections_size);
 
+    //Nodes
     glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, buffer->getHandle(), 0, nodes_size);
+    //Connections
     glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 1, buffer->getHandle(), nodes_size, connections_size);
+    //BaseNodes
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 4, buffer->getHandle(),
+            nodes_size + connections_size, nodes_size);
+    //Combined
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 5, buffer->getHandle(),
+            nodes_size*2 + connections_size, acc_size);
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 6, buffer->getHandle(),
+            nodes_size*2 + connections_size + acc_size, forces_size);
 
     energy_buffer = Buffer::Create(sizeof(float) * 3, GL_DYNAMIC_READ);
-    glBindBufferRange( GL_SHADER_STORAGE_BUFFER, 2, energy_buffer->getHandle(), 0, sizeof(float) * 3);
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 2, energy_buffer->getHandle(), 0, sizeof(float) * 3);
 
     if (just_load) return;
     Ref<Shader> energy = Shader::Create("src/energy_shader.os");
     energy->Bind();
     energy->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    energy->SetUniform("K", 98);
+    energy->SetUniform("K", 98.f);
     glDispatchCompute(2, 1, 1);
     float energies_before[3];
     energy_buffer->getContents(energies_before, 0, sizeof(float) * 3);
@@ -365,7 +419,7 @@ void benchmarkSheet() {
     compute->Bind();
     compute->SetUniform("drag", 0.1f);
     compute->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    compute->SetUniform("K", 98);
+    compute->SetUniform("K", 98.f);
     compute->SetUniform("TS", TS);
 
     {
@@ -373,14 +427,13 @@ void benchmarkSheet() {
     ZoneScopedN("sheet_cpu");
     
     for (int i = 0; i < ITERATIONS; i++) {
-        TracyGpuZone("sheet_iteration");
         glDispatchCompute(node_count, node_count, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
     glFinish();
     TracyGpuCollect;
     }
-    buffer->getContents(nodes.data(), connections_size, nodes_size);
+    buffer->getContents(nodes.data(), 0, nodes_size);
     for (auto& node : nodes) {
         
         if (
@@ -401,15 +454,15 @@ void benchmarkSheet() {
     float energies_after[3];
     energy->Bind();
     energy->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    energy->SetUniform("K", 98);
-    glDispatchCompute(2, 1, 1);
+    energy->SetUniform("K", 98.f);
+    glDispatchCompute(1, 1, 1);
     energy_buffer->getContents(energies_after, 0, sizeof(float) * 3);
 
     float energies_diff[4];
     energies_diff[0] = energies_before[0] - energies_after[0];
     energies_diff[1] = energies_before[1] - energies_after[1];
     energies_diff[2] = energies_before[2] - energies_after[2];
-    energies_diff[0] = energies_diff[0] + energies_diff[1] + energies_diff[2];
+    energies_diff[3] = energies_diff[0] + energies_diff[1] + energies_diff[2];
 
     printf("Energies difference:\n\tKinetic: %f\n\tSpring: %f\n\tGravitational: %f\n\tTotal: %f\n",
             energies_diff[0],
@@ -436,21 +489,36 @@ void benchmarkCube() {
 
     buffer_state = 3;
     
-    buffer = Buffer::Create(nodes_size + connections_size, GL_STATIC_DRAW);
+    const size_t acc_size = nodes.size() * sizeof(Accumulation);
+    const size_t forces_size = nodes.size() * sizeof(glm::vec4);
+    const size_t buffer_size = nodes_size * 2 + acc_size + forces_size + connections_size;
+
+    buffer = Buffer::Create(buffer_size, GL_STATIC_DRAW);
     buffer->subData(nodes.data(), 0, nodes_size);
     buffer->subData(connections.data(), nodes_size, connections_size);
 
+    //Nodes
     glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, buffer->getHandle(), 0, nodes_size);
+    //Connections
     glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 1, buffer->getHandle(), nodes_size, connections_size);
+    //BaseNodes
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 4, buffer->getHandle(),
+            nodes_size + connections_size, nodes_size);
+    //Combined
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 5, buffer->getHandle(),
+            nodes_size*2 + connections_size, acc_size);
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 6, buffer->getHandle(),
+            nodes_size*2 + connections_size + acc_size, forces_size);
 
     energy_buffer = Buffer::Create(sizeof(float) * 3, GL_DYNAMIC_READ);
-    glBindBufferRange( GL_SHADER_STORAGE_BUFFER, 2, energy_buffer->getHandle(), 0, sizeof(float) * 3);
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 2, energy_buffer->getHandle(), 0, sizeof(float) * 3);
+
     if (just_load) return;
     Ref<Shader> energy = Shader::Create("src/energy_shader.os");
     energy->Bind();
     energy->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    energy->SetUniform("K", 98);
-    glDispatchCompute(2, 1, 1);
+    energy->SetUniform("K", 98.f);
+    glDispatchCompute(1, 1, 1);
     float energies_before[3];
     energy_buffer->getContents(energies_before, 0, sizeof(float) * 3);
 
@@ -458,7 +526,7 @@ void benchmarkCube() {
     compute->Bind();
     compute->SetUniform("drag", 0.1f);
     compute->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    compute->SetUniform("K", 98);
+    compute->SetUniform("K", 98.f);
     compute->SetUniform("TS", TS);
 
     {
@@ -473,7 +541,7 @@ void benchmarkCube() {
     glFinish();
     TracyGpuCollect;
     }
-    buffer->getContents(nodes.data(), connections_size, nodes_size);
+    buffer->getContents(nodes.data(), 0, nodes_size);
     for (auto& node : nodes) {
         
         if (
@@ -494,7 +562,7 @@ void benchmarkCube() {
     float energies_after[3];
     energy->Bind();
     energy->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    energy->SetUniform("K", 98);
+    energy->SetUniform("K", 98.f);
     glDispatchCompute(2, 1, 1);
     energy_buffer->getContents(energies_after, 0, sizeof(float) * 3);
 
@@ -514,7 +582,7 @@ void benchmarkCube() {
 
 void buildPendulum(std::vector<Connection>& connections, std::vector<Node>& nodes) {
 
-    ZoneScoped;
+    ZoneScopedS(5);
     static const float angle = PI/4.0;
     nodes.clear();
     nodes.reserve(node_count);
@@ -529,35 +597,21 @@ void buildPendulum(std::vector<Connection>& connections, std::vector<Node>& node
         n.mass = mass_fraction;
         n.locked = false;
         nodes.push_back(n);
-        for (int& c : nodes.back().connections) {
-        
-            c = -1;
-
-        }
     }
     connections.clear();
     connections.reserve(node_count - 1);
     for (size_t i = 0; i < node_count - 1; i++) {
-        Node& node1 = nodes[i+0];
-        Node& node2 = nodes[i+1];
+        const Node& node1 = nodes[i+0];
+        const Node& node2 = nodes[i+1];
         const float between = glm::distance(node1.pos, node2.pos);
 
         connections.emplace_back(i+0, i+1, between);
-
-        uint head;
-        for (head = 0; node1.connections[head] != -1; head++);
-        if (head >= 30) continue;
-        node1.connections[head] = i;
-
-        for (head = 0; node2.connections[head] != -1; head++);
-        if (head >= 30) continue;
-        node2.connections[head] = i;
     }
 }
 
 void buildSheet(std::vector<Connection>& connections, std::vector<Node>& nodes) {
 
-    ZoneScoped;
+    ZoneScopedS(5);
     const size_t node_count_1D = glm::sqrt(node_count);
     const float fraction = size/(float)node_count_1D;
     const float mass_fraction = mass/(float)node_count;
@@ -591,15 +645,6 @@ void buildSheet(std::vector<Connection>& connections, std::vector<Node>& nodes) 
                 const float between = glm::length(node1.pos - node2.pos);
 
                 connections.emplace_back(index, c, between);
-
-                uint head;
-                for (head = 0; node1.connections[head] != -1; head++);
-                if (head >= 30) continue;
-                node1.connections[head] = counter;
-
-                for (head = 0; node2.connections[head] != -1; head++);
-                if (head >= 30) continue;
-                node2.connections[head] = counter;
             }
         }
         counter++;
@@ -632,15 +677,6 @@ void buildSheet(std::vector<Connection>& connections, std::vector<Node>& nodes) 
         const float between = glm::length(node1.pos - node2.pos);
 
         connections.emplace_back(c.first, c.second, between);
-
-        uint head;
-        for (head = 0; node1.connections[head] != -1; head++);
-        if (head >= 30) continue;
-        node1.connections[head] = counter;
-
-        for (head = 0; node2.connections[head] != -1; head++);
-        if (head >= 30) continue;
-        node2.connections[head] = counter;
     }
 }
 

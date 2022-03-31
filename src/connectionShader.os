@@ -9,7 +9,6 @@ struct Node {
     vec4 velocity;
     float mass;
 
-    int connections[30];
     uint locked;
 
 };
@@ -21,6 +20,13 @@ struct Connection {
     float normal_length;
 
 };
+
+
+layout(std430, binding=6) readonly restrict buffer Forces {
+
+    ivec4 force[];
+
+} in_forces;
 
 layout(std430, binding=0) readonly restrict buffer Nodes {
 
@@ -50,7 +56,8 @@ void main() {
     
     vec3 in_pos;
     if (gl_VertexID % 2 == 0) in_pos = -node1.position.xyz;
-    else in_pos = -node2.position.xyz;
+
+else in_pos = -node2.position.xyz;
     gl_Position = u_assembled_matrix * vec4(in_pos, 1.0);
 
 }

@@ -8,6 +8,7 @@ struct NodeConfig {
 };
 
 void GeneratePoints(std::vector<glm::vec3>& points_out, uint box_size, float box_extent) {
+    ZoneScoped;
 
     float step = box_extent/(box_size-1) * 2;
 
@@ -31,6 +32,7 @@ void GeneratePoints(std::vector<glm::vec3>& points_out, uint box_size, float box
 }
 
 void GenerateConnections(std::vector<std::pair<uint, uint>>& connections, uint node_count) {
+    ZoneScopedS(5);
 
     connections.clear();
     for (uint x = 0; x < node_count; x++) {
@@ -175,6 +177,7 @@ void GenerateNodes (
         std::vector<Connection>& connections,
         NodeConfig config) {
 
+    ZoneScopedS(5);
     std::vector<glm::vec3> points;
     GeneratePoints(points, config.box_size, config.box_extent);
     std::vector<std::pair<uint,uint>> tmp_connections;
@@ -184,9 +187,6 @@ void GenerateNodes (
     for (auto& point : points) {
         auto p4 = glm::vec4(point.x, point.y, point.z, 0);
         nodes.emplace_back(p4, glm::vec4(0), config.mass);
-        for (uint i = 0; i < 30; i++) {
-            nodes.back().connections[i] = -1;
-        }
     }
     connections.resize(tmp_connections.size());
     for (size_t i = 0; i < connections.size(); i++) {
@@ -196,14 +196,5 @@ void GenerateNodes (
         auto& node1 = nodes[connection.first];
         auto& node2 = nodes[connection.second];
         connection.neutral_length = glm::length(node1.pos - node2.pos);
-
-        uint head;
-        for (head = 0; node1.connections[head] != -1; head++);
-        if (head >= 30) continue;
-        node1.connections[head] = i;
-
-        for (head = 0; node2.connections[head] != -1; head++);
-        if (head >= 30) continue;
-        node2.connections[head] = i;
     }
 }

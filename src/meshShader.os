@@ -13,7 +13,6 @@ struct Node {
     vec4 velocity;
     float mass;
 
-    int connections[30];
     uint locked;
 
 };

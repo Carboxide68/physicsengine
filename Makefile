@@ -24,7 +24,7 @@ release: flags := $(flags) -O3 -march=native
 release: $(objFiles)
 	$(CC) $(flags) $(includes) $(links) $(objFiles) -o $@
 
-profiling: flags := $(flags) -g -O3 -march=native -DTRACY_ENABLE
+profiling: flags := $(flags) -g -O3 -march=native -DTRACY_ENABLE -fno-omit-frame-pointer
 profiling: $(objFiles)
 	$(CC) $(flags) $(includes) $(links) $(objFiles) -o $@
 
