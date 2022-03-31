@@ -375,33 +375,47 @@ void benchmarkSheet() {
     ZoneScopedN("Build");
     buildSheet(connections, nodes);
     
+    const uint node_count_1D = sqrt(node_count);
+    nodes[0].locked = true;
+    nodes[node_count_1D-1].locked = true;
+    nodes[(node_count_1D - 1) * node_count_1D].locked = true;
+    nodes[node_count_1D * node_count_1D - 1].locked = true;
     }
     printf("Node Count: %lu\nConnection Count: %lu\n", nodes.size(), connections.size());
-    connections_size = connections.size() * sizeof(Connection);
-    nodes_size = nodes.size() * sizeof(Node);
 
     buffer_state = 2;
-    
+
+    nodes_size = nodes.size() * sizeof(Node);
+    connections_size = connections.size() * sizeof(Connection);
+    const size_t connections_offset = align(128, nodes_size);
+
+    const size_t n2_offset = align(128, connections_offset + connections_size);
     const size_t acc_size = nodes.size() * sizeof(Accumulation);
+    const size_t acc_offset = align(128, n2_offset + nodes_size);
+
     const size_t forces_size = nodes.size() * sizeof(glm::vec4);
-    const size_t buffer_size = nodes_size * 2 + acc_size + forces_size + connections_size;
+    const size_t forces_offset = align(128, acc_offset + acc_size);
+
+    const size_t buffer_size = forces_offset + forces_size;
 
     buffer = Buffer::Create(buffer_size, GL_STATIC_DRAW);
     buffer->subData(nodes.data(), 0, nodes_size);
-    buffer->subData(connections.data(), nodes_size, connections_size);
+    buffer->subData(connections.data(), connections_offset, connections_size);
 
     //Nodes
-    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, buffer->getHandle(), 0, nodes_size);
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, buffer->getHandle(),
+            0, nodes_size);
     //Connections
-    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 1, buffer->getHandle(), nodes_size, connections_size);
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 1, buffer->getHandle(), 
+            connections_offset, connections_size);
     //BaseNodes
     glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 4, buffer->getHandle(),
-            nodes_size + connections_size, nodes_size);
+            n2_offset, nodes_size);
     //Combined
     glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 5, buffer->getHandle(),
-            nodes_size*2 + connections_size, acc_size);
+            acc_offset, acc_size);
     glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 6, buffer->getHandle(),
-            nodes_size*2 + connections_size + acc_size, forces_size);
+            forces_offset, forces_size);
 
     energy_buffer = Buffer::Create(sizeof(float) * 3, GL_DYNAMIC_READ);
     glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 2, energy_buffer->getHandle(), 0, sizeof(float) * 3);
@@ -411,11 +425,11 @@ void benchmarkSheet() {
     energy->Bind();
     energy->SetUniform("gravity", glm::vec3(0, -9.8, 0));
     energy->SetUniform("K", 98.f);
-    glDispatchCompute(2, 1, 1);
+    glDispatchCompute(1, 1, 1);
     float energies_before[3];
     energy_buffer->getContents(energies_before, 0, sizeof(float) * 3);
 
-    Ref<Shader> compute = Shader::Create("src/physics.os");
+    Ref<Shader> compute = Shader::Create("src/physics_second.os");
     compute->Bind();
     compute->SetUniform("drag", 0.1f);
     compute->SetUniform("gravity", glm::vec3(0, -9.8, 0));
@@ -427,7 +441,7 @@ void benchmarkSheet() {
     ZoneScopedN("sheet_cpu");
     
     for (int i = 0; i < ITERATIONS; i++) {
-        glDispatchCompute(node_count, node_count, 1);
+        glDispatchCompute(1, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
     glFinish();
@@ -448,9 +462,10 @@ void benchmarkSheet() {
             std::isnan(  node.velocity.w )
             ) {
         
-            printf("Test \"Sheet\" was invalid! Value found to be NaN!\n");
+                printf("Test \"Sheet\" was invalid! Value found to be NaN!\n");
         }
     }
+
     float energies_after[3];
     energy->Bind();
     energy->SetUniform("gravity", glm::vec3(0, -9.8, 0));
@@ -459,9 +474,9 @@ void benchmarkSheet() {
     energy_buffer->getContents(energies_after, 0, sizeof(float) * 3);
 
     float energies_diff[4];
-    energies_diff[0] = energies_before[0] - energies_after[0];
-    energies_diff[1] = energies_before[1] - energies_after[1];
-    energies_diff[2] = energies_before[2] - energies_after[2];
+    energies_diff[0] = energies_after[0] - energies_before[0];
+    energies_diff[1] = energies_after[1] - energies_before[1];
+    energies_diff[2] = energies_after[2] - energies_before[2];
     energies_diff[3] = energies_diff[0] + energies_diff[1] + energies_diff[2];
 
     printf("Energies difference:\n\tKinetic: %f\n\tSpring: %f\n\tGravitational: %f\n\tTotal: %f\n",
@@ -484,31 +499,40 @@ void benchmarkCube() {
     
     }
     printf("Node Count: %lu\nConnection Count: %lu\n", nodes.size(), connections.size());
-    connections_size = connections.size() * sizeof(Connection);
-    nodes_size = nodes.size() * sizeof(Node);
 
     buffer_state = 3;
-    
+
+    nodes_size = nodes.size() * sizeof(Node);
+    connections_size = connections.size() * sizeof(Connection);
+    const size_t connections_offset = align(128, nodes_size);
+
+    const size_t n2_offset = align(128, connections_offset + connections_size);
     const size_t acc_size = nodes.size() * sizeof(Accumulation);
+    const size_t acc_offset = align(128, n2_offset + nodes_size);
+
     const size_t forces_size = nodes.size() * sizeof(glm::vec4);
-    const size_t buffer_size = nodes_size * 2 + acc_size + forces_size + connections_size;
+    const size_t forces_offset = align(128, acc_offset + acc_size);
+
+    const size_t buffer_size = forces_offset + forces_size;
 
     buffer = Buffer::Create(buffer_size, GL_STATIC_DRAW);
     buffer->subData(nodes.data(), 0, nodes_size);
-    buffer->subData(connections.data(), nodes_size, connections_size);
+    buffer->subData(connections.data(), connections_offset, connections_size);
 
     //Nodes
-    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, buffer->getHandle(), 0, nodes_size);
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 0, buffer->getHandle(),
+            0, nodes_size);
     //Connections
-    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 1, buffer->getHandle(), nodes_size, connections_size);
+    glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 1, buffer->getHandle(), 
+            connections_offset, connections_size);
     //BaseNodes
     glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 4, buffer->getHandle(),
-            nodes_size + connections_size, nodes_size);
+            n2_offset, nodes_size);
     //Combined
     glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 5, buffer->getHandle(),
-            nodes_size*2 + connections_size, acc_size);
+            acc_offset, acc_size);
     glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 6, buffer->getHandle(),
-            nodes_size*2 + connections_size + acc_size, forces_size);
+            forces_offset, forces_size);
 
     energy_buffer = Buffer::Create(sizeof(float) * 3, GL_DYNAMIC_READ);
     glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 2, energy_buffer->getHandle(), 0, sizeof(float) * 3);
@@ -522,7 +546,7 @@ void benchmarkCube() {
     float energies_before[3];
     energy_buffer->getContents(energies_before, 0, sizeof(float) * 3);
 
-    Ref<Shader> compute = Shader::Create("src/physics.os");
+    Ref<Shader> compute = Shader::Create("src/physics_second.os");
     compute->Bind();
     compute->SetUniform("drag", 0.1f);
     compute->SetUniform("gravity", glm::vec3(0, -9.8, 0));
@@ -534,8 +558,7 @@ void benchmarkCube() {
     ZoneScopedN("cube_cpu");
     
     for (int i = 0; i < ITERATIONS; i++) {
-        TracyGpuZone("sheet_iteration");
-        glDispatchCompute(node_count, node_count, 1);
+        glDispatchCompute(1, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
     glFinish();
@@ -555,21 +578,23 @@ void benchmarkCube() {
             std::isnan(  node.velocity.z ) ||
             std::isnan(  node.velocity.w )
             ) {
-        
-            printf("Test \"Cube\" was invalid! Value found to be NaN!\n");
+      
+                printf("Test \"Cube\" was invalid! Value found to be NaN!\n");
+
         }
     }
+
     float energies_after[3];
     energy->Bind();
     energy->SetUniform("gravity", glm::vec3(0, -9.8, 0));
     energy->SetUniform("K", 98.f);
-    glDispatchCompute(2, 1, 1);
+    glDispatchCompute(1, 1, 1);
     energy_buffer->getContents(energies_after, 0, sizeof(float) * 3);
 
     float energies_diff[4];
-    energies_diff[0] = energies_before[0] - energies_after[0];
-    energies_diff[1] = energies_before[1] - energies_after[1];
-    energies_diff[2] = energies_before[2] - energies_after[2];
+    energies_diff[0] = energies_after[0] - energies_before[0];
+    energies_diff[1] = energies_after[1] - energies_before[1];
+    energies_diff[2] = energies_after[2] - energies_before[2];
     energies_diff[3] = energies_diff[0] + energies_diff[1] + energies_diff[2];
 
     printf("Energies difference:\n\tKinetic: %f\n\tSpring: %f\n\tGravitational: %f\n\tTotal: %f\n",
@@ -653,17 +678,24 @@ void buildSheet(std::vector<Connection>& connections, std::vector<Node>& nodes) 
     //Edge cases
 
     for (size_t i = 0; i < node_count_1D - 1; i++) {
-        const size_t index = i * node_count_1D;
+        size_t index = i * node_count_1D;
         cons.emplace_back(index, index+1);
         cons.emplace_back(index, index + node_count_1D + 1);
         cons.emplace_back(index, index + node_count_1D);
+
+        index = (i+1) * node_count_1D - 1;
+        cons.emplace_back(index, index + node_count_1D);
+        cons.emplace_back(index, index + node_count_1D-1);
     }
     for (size_t i = 1; i < node_count_1D - 1; i++) {
-        const size_t index = i;
+        size_t index = i;
         cons.emplace_back(index, index+1);
         cons.emplace_back(index, index + node_count_1D + 1);
         cons.emplace_back(index, index + node_count_1D - 1);
         cons.emplace_back(index, index + node_count_1D);
+
+        index = i + node_count_1D * (node_count_1D-1);
+        cons.emplace_back(index, index+1);
     }
 
     //Edge edge cases
