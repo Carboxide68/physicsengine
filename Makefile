@@ -25,8 +25,9 @@ release: $(objFiles)
 	$(CC) $(flags) $(includes) $(links) $(objFiles) -o $@
 
 profiling: flags := $(flags) -g -O3 -march=native -DTRACY_ENABLE -fno-omit-frame-pointer
+profiling: links := $(links) -lfreetype -lcapstone -lgtk-3
 profiling: $(objFiles)
-	$(CC) $(flags) $(includes) $(links) $(objFiles) -o $@
+	$(CC) $(flags) $(includes) $(links) $(objFiles) -o $@ -rdynamic
 
 small: flags := $(flags) -Os -march=native
 small: $(objFiles)

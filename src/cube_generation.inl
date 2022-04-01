@@ -10,19 +10,19 @@ struct NodeConfig {
 void GeneratePoints(std::vector<glm::vec3>& points_out, uint box_size, float box_extent) {
     ZoneScoped;
 
-    float step = box_extent/(box_size-1) * 2;
+    float step = box_extent/(box_size-1);
 
-    float pos_x = -box_extent;
-    float pos_y = -box_extent;
-    float pos_z = -box_extent;
+    float pos_x = 0;
+    float pos_y = 0;
+    float pos_z = 0;
     points_out.clear();
 
     for (size_t step_x = 0; step_x < box_size; step_x++) {
-        pos_y = -box_extent;
+        pos_y = 0; 
         for (size_t step_y = 0; step_y < box_size; step_y++) {
-            pos_z = -box_extent;
+            pos_z = 0;
             for (size_t step_z = 0; step_z < box_size; step_z++) {
-                points_out.push_back(glm::vec3(pos_x, pos_y, pos_z));
+                points_out.emplace_back(pos_x, pos_y, pos_z);
                 pos_z += step;
             }
             pos_y += step;

@@ -14,6 +14,7 @@ struct Node {
     float mass;
 
     uint locked;
+    uint padding[2];
 
 };
 
@@ -71,7 +72,7 @@ const Light light = {
 
 const Material material = {
 
-    {0.2, 0.0, 0.0},
+    {0.3, 0.0, 0.0},
     {0.5, 0.0, 0.0},
     {1.0, 1.0, 1.0},
     32.0,
@@ -92,7 +93,7 @@ void main() {
 
     vec3 lightDir = normalize(light.position - FragPos);
     vec3 ambient = material.ambient;
-    if (Locked != 0) ambient = vec3(0.1, 0.1, 0.1);
+    if (Locked != 0) ambient = vec3(0.2, 0.2, 0.2);
     float diff = dot(norm, lightDir);
     vec3 mat_diff = material.diffuse;
     if (Locked != 0) mat_diff = vec3(0.5, 0.5, 0.5);

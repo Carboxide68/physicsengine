@@ -173,6 +173,7 @@ void main() {
     calculate_forces();
 
     barrier();
+    memoryBarrier();
     for (uint i = s; i < e; i++) {
         const float mass = in_nodes.nodes[i].mass;
         const vec4 force = in_forces.force[i];
@@ -189,6 +190,7 @@ void main() {
     calculate_forces();
 
     barrier();
+    memoryBarrier();
     for (uint i = s; i < e; i++) {
         const float mass = in_nodes.nodes[i].mass;
         const vec4 force = in_forces.force[i];
@@ -205,6 +207,7 @@ void main() {
     calculate_forces();
 
     barrier();
+    memoryBarrier();
     for (uint i = s; i < e; i++) {
         const float mass = in_nodes.nodes[i].mass;
         const vec4 force = in_forces.force[i];
@@ -220,6 +223,7 @@ void main() {
     calculate_forces();
 
     barrier();
+    memoryBarrier();
     //yn+1
     for (uint i = s; i < e; i++) {
         const float mass = in_nodes.nodes[i].mass;

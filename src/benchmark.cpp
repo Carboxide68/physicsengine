@@ -27,17 +27,23 @@ int invocations;
 size_t node_count = 1000;
 float size = 1.f;
 float TS = 0.001f;
+float drag = 0.05f;
+float K = 98.f;
 
 float mass = 0.2f;
 
 int buffer_state = -1;
 bool just_load = true;
+bool use_gravity = true;
 
 Ref<Buffer> buffer;
 Ref<Buffer> energy_buffer;
+Ref<Buffer> sphere_buffer;
 
 size_t nodes_size;
 size_t connections_size;
+
+size_t mesh_size = 0;
 
 struct Node {
 
@@ -117,6 +123,9 @@ int main(int argc, char *argv[]) {
         }
         ImGui::InputFloat("Time Step", &TS);
         ImGui::InputFloat("Mass", &mass);
+        ImGui::InputFloat("K", &K);
+        ImGui::InputFloat("Drag", &drag);
+        ImGui::Checkbox("Gravity", &use_gravity);
 
         if (ImGui::Button("Pendulum Benchmark")) {
             benchmarkPendulum();
@@ -148,6 +157,7 @@ void draw() {
 
     static bool initialized = false;
     static uint VAO;
+    static uint mesh_VAO;
     static Ref<Shader> c_shader;
     static Ref<Shader> p_shader;
     static const glm::mat4 model_matrix(0.01);
@@ -158,25 +168,41 @@ void draw() {
         camera.setPos({-1, -1, -1});
         camera.lookAt({0, 0, 0});
         glGenVertexArrays(1, &VAO);
+
+        glGenVertexArrays(1, &mesh_VAO);
+        glBindVertexArray(mesh_VAO);
+        sphere_buffer->bind(GL_ARRAY_BUFFER);
+        glEnableVertexAttribArray(0);
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 
+                sizeof(float) * 6, 0);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 
+                sizeof(float) * 6, (void*)(sizeof(float) * 3));
+        Buffer::unbind(0);
+        glBindVertexArray(0);
+
         c_shader = Shader::Create("src/connectionShader.os");
-        p_shader = Shader::Create("src/point_shader.os");
+        p_shader = Shader::Create("src/meshShader.os");
 
         initialized = true;
     }
 
     camera.move(movement * camera.getLookingMatrix());
 
-    glBindVertexArray(VAO);
+    glBindVertexArray(mesh_VAO);
     p_shader->Bind();
+    p_shader->SetUniform("u_model_matrix", model_matrix);
     p_shader->SetUniform("u_assembled_matrix", camera.getPerspectiveMatrix() * camera.getViewMatrix());
-    p_shader->SetUniform("u_node_size", model_matrix[0][0]);
-    glDrawArrays(GL_POINTS, 0, nodes_size/sizeof(Node));
+    p_shader->SetUniform("u_player_pos", camera.getPos());
+    glDrawArraysInstanced(GL_TRIANGLES, 0, mesh_size/6, nodes_size/sizeof(Node));
 
+    glBindVertexArray(VAO);
     c_shader->Bind();
     c_shader->SetUniform("u_assembled_matrix", camera.getPerspectiveMatrix() * camera.getViewMatrix());
     glDrawArrays(GL_LINES, 0, connections_size/(sizeof(Connection)) * 2);
 }
 
+#include "gltf_impl.inl"
 int init_graphics_env() {
 
      /* Initialize the library */
@@ -237,6 +263,16 @@ int init_graphics_env() {
 
     TracyGpuContext(window);
 
+    tinygltf_impl::TinyGLTF loader;
+    tinygltf_impl::Model model;
+
+    tinygltf_impl::load_model(loader, &model, "src/sphere.gltf");
+
+    tinygltf_impl::Mesh mesh = model.meshes[0];
+    std::vector<float> data = tinygltf_impl::MeshToFloats(model, mesh);
+    sphere_buffer = Buffer::Create(data.size() * sizeof(float), GL_STATIC_DRAW);
+    sphere_buffer->subData(data.data(), 0, data.size() * sizeof(float));
+    mesh_size = data.size();
     return 0;
 
 }
@@ -300,28 +336,35 @@ void benchmarkPendulum() {
     if (just_load) return;
     Ref<Shader> energy = Shader::Create("src/energy_shader.os");
     energy->Bind();
-    energy->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    energy->SetUniform("K", 98.f);
+    glm::vec3 g = glm::vec3(0);
+    if (use_gravity) {
+        g = glm::vec3(0, -9.8, 0);
+    }
+    energy->SetUniform("gravity", g);
+    energy->SetUniform("K", K);
     glDispatchCompute(1, 1, 1);
     float energies_before[3];
     energy_buffer->getContents(energies_before, 0, sizeof(float) * 3);
 
     Ref<Shader> compute = Shader::Create("src/physics_second.os");
     compute->Bind();
-    compute->SetUniform("drag", 0.1f);
-    compute->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    compute->SetUniform("K", 98.f);
+    compute->SetUniform("drag", drag);
+    compute->SetUniform("gravity", g);
+    compute->SetUniform("K", K);
     compute->SetUniform("TS", TS);
 
     {
-    TracyGpuZone("pendulum");
+    TracyGpuZone("Pendulum");
     ZoneScopedN("pendulum_cpu");
     
     for (int i = 0; i < ITERATIONS; i++) {
         glDispatchCompute(1, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
+    {
+    ZoneScopedN("glFinish");
     glFinish();
+    }
     TracyGpuCollect;
     }
     buffer->getContents(nodes.data(), 0, nodes_size);
@@ -345,8 +388,8 @@ void benchmarkPendulum() {
 
     float energies_after[3];
     energy->Bind();
-    energy->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    energy->SetUniform("K", 98.f);
+    energy->SetUniform("gravity", g);
+    energy->SetUniform("K", K);
     glDispatchCompute(1, 1, 1);
     energy_buffer->getContents(energies_after, 0, sizeof(float) * 3);
 
@@ -367,7 +410,6 @@ void benchmarkPendulum() {
 void benchmarkSheet() {
 
     printf("_______________________________________\nTest Sheet:\n");
-    printf("Node Count: %lu\n", node_count);
     
     std::vector<Connection> connections;
     std::vector<Node> nodes;
@@ -386,10 +428,12 @@ void benchmarkSheet() {
     buffer_state = 2;
 
     nodes_size = nodes.size() * sizeof(Node);
+
     connections_size = connections.size() * sizeof(Connection);
     const size_t connections_offset = align(128, nodes_size);
 
     const size_t n2_offset = align(128, connections_offset + connections_size);
+
     const size_t acc_size = nodes.size() * sizeof(Accumulation);
     const size_t acc_offset = align(128, n2_offset + nodes_size);
 
@@ -421,32 +465,41 @@ void benchmarkSheet() {
     glBindBufferRange(GL_SHADER_STORAGE_BUFFER, 2, energy_buffer->getHandle(), 0, sizeof(float) * 3);
 
     if (just_load) return;
+
+    glm::vec3 g = glm::vec3(0);
+    if (use_gravity) {
+        g = glm::vec3(0, -9.8, 0);
+    }
     Ref<Shader> energy = Shader::Create("src/energy_shader.os");
     energy->Bind();
-    energy->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    energy->SetUniform("K", 98.f);
+    energy->SetUniform("gravity", g);
+    energy->SetUniform("K", K);
     glDispatchCompute(1, 1, 1);
     float energies_before[3];
     energy_buffer->getContents(energies_before, 0, sizeof(float) * 3);
 
     Ref<Shader> compute = Shader::Create("src/physics_second.os");
     compute->Bind();
-    compute->SetUniform("drag", 0.1f);
-    compute->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    compute->SetUniform("K", 98.f);
+    compute->SetUniform("drag", drag);
+    compute->SetUniform("gravity", g);
+    compute->SetUniform("K", K);
     compute->SetUniform("TS", TS);
 
     {
-    TracyGpuZone("sheet");
+    TracyGpuZone("Sheet");
     ZoneScopedN("sheet_cpu");
     
     for (int i = 0; i < ITERATIONS; i++) {
         glDispatchCompute(1, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
+    {
+    ZoneScopedN("glFinish");
     glFinish();
+    }
     TracyGpuCollect;
     }
+
     buffer->getContents(nodes.data(), 0, nodes_size);
     for (auto& node : nodes) {
         
@@ -468,8 +521,8 @@ void benchmarkSheet() {
 
     float energies_after[3];
     energy->Bind();
-    energy->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    energy->SetUniform("K", 98.f);
+    energy->SetUniform("gravity", g);
+    energy->SetUniform("K", K);
     glDispatchCompute(1, 1, 1);
     energy_buffer->getContents(energies_after, 0, sizeof(float) * 3);
 
@@ -489,7 +542,6 @@ void benchmarkSheet() {
 
 void benchmarkCube() {
     printf("_______________________________________\nTest Cube:\n");
-    printf("Node Count: %lu\n", node_count);
     
     std::vector<Connection> connections;
     std::vector<Node> nodes;
@@ -497,6 +549,14 @@ void benchmarkCube() {
     ZoneScopedN("Build");
     buildCube(connections, nodes);
     
+    const size_t node_count_1D = glm::pow((double)node_count, 1.0/3.0);
+    for (size_t x = 0; x < node_count_1D; x++) {
+        for (size_t z = 0; z < node_count_1D; z++) {
+            const size_t index = (x) * node_count_1D * node_count_1D +\
+                                 (0) * node_count_1D + z;
+            nodes[index].locked = 1;
+        }
+    }
     }
     printf("Node Count: %lu\nConnection Count: %lu\n", nodes.size(), connections.size());
 
@@ -541,29 +601,33 @@ void benchmarkCube() {
     Ref<Shader> energy = Shader::Create("src/energy_shader.os");
     energy->Bind();
     energy->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    energy->SetUniform("K", 98.f);
+    energy->SetUniform("K", K);
     glDispatchCompute(1, 1, 1);
     float energies_before[3];
     energy_buffer->getContents(energies_before, 0, sizeof(float) * 3);
 
     Ref<Shader> compute = Shader::Create("src/physics_second.os");
     compute->Bind();
-    compute->SetUniform("drag", 0.1f);
+    compute->SetUniform("drag", drag);
     compute->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    compute->SetUniform("K", 98.f);
+    compute->SetUniform("K", K);
     compute->SetUniform("TS", TS);
 
     {
-    TracyGpuZone("cube");
+    TracyGpuZone("Cube");
     ZoneScopedN("cube_cpu");
     
     for (int i = 0; i < ITERATIONS; i++) {
         glDispatchCompute(1, 1, 1);
         glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     }
+    {
+    ZoneScopedN("glFinish");
     glFinish();
+    }
     TracyGpuCollect;
     }
+
     buffer->getContents(nodes.data(), 0, nodes_size);
     for (auto& node : nodes) {
         
@@ -587,7 +651,7 @@ void benchmarkCube() {
     float energies_after[3];
     energy->Bind();
     energy->SetUniform("gravity", glm::vec3(0, -9.8, 0));
-    energy->SetUniform("K", 98.f);
+    energy->SetUniform("K", K);
     glDispatchCompute(1, 1, 1);
     energy_buffer->getContents(energies_after, 0, sizeof(float) * 3);
 
@@ -638,11 +702,12 @@ void buildSheet(std::vector<Connection>& connections, std::vector<Node>& nodes) 
 
     ZoneScopedS(5);
     const size_t node_count_1D = glm::sqrt(node_count);
+    const size_t nc = node_count_1D * node_count_1D;
     const float fraction = size/(float)node_count_1D;
-    const float mass_fraction = mass/(float)node_count;
+    const float mass_fraction = mass/(float)nc;
 
     nodes.clear();
-    nodes.reserve(node_count);
+    nodes.reserve(nc);
     for (size_t x = 0; x < node_count_1D; x++) {
         for (size_t z = 0; z < node_count_1D; z++) {
             Node n;
@@ -714,7 +779,7 @@ void buildSheet(std::vector<Connection>& connections, std::vector<Node>& nodes) 
 
 #include "cube_generation.inl"
 void buildCube(std::vector<Connection>& connections, std::vector<Node>& nodes) {
-    const size_t node_count_1D = glm::pow(node_count, 0.3f);
+    const size_t node_count_1D = glm::pow((double)node_count, 1.0/3.0);
     const float mass_fraction = mass/(float)node_count;
     GenerateNodes(nodes, connections, {node_count_1D, size, mass_fraction});
 }
