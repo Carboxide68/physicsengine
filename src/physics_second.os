@@ -71,29 +71,6 @@ const float EPSILON2 = 0.000000001;
 double start;
 double end;
 
-int QuantizeFloat(float value, float scope) {
-
-    return int(value/scope * double(INT_MAX));
-
-}
-
-float DeQuantize(int value, float scope) {
-
-    return float(double(value)/double(INT_MAX) * scope);
-
-}
-
-void addForce(uint i, vec4 force, float scope) {
-
-    in_forces.force[i] += force;
-
-}
-
-vec4 readForce(uint i, float scope) {
-
-    return in_forces.force[i];
-
-}
 /*
 void addForce(uint i, vec4 force, float scope) {
 
