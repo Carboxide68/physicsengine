@@ -20,7 +20,7 @@ void PhysicsHandler::OnStart() {
     m_MeshRenderer->Load(m_MeshNodeHandle, m_NodeProp);
 
     m_GizmoDrawer = std::static_pointer_cast<GizmoDrawer>(Game->scene->GetRenderer("GizmoDrawer"));
-    PhysicsThreadPool.sleep_duration = 0;
+    PhysicsThreadPool.sleep_duration = 10;
 }
 
 void PhysicsHandler::EachFrame() {
@@ -34,7 +34,7 @@ void PhysicsHandler::EachFrame() {
         }
     } else {
         if (!stop.load()) {
-            m_PhysicsThread = std::thread(EngineMain, PhysicsCtx(m_Softbodies, executing, run, stop, TS, time_passed, average_tick_time));
+            m_PhysicsThread = std::thread(EngineMain, PhysicsCtx(m_Softbodies, executing, run, stop, singlethreaded, TS, time_passed, average_tick_time));
         }
     }
 }
@@ -48,9 +48,54 @@ PhysicsHandler::~PhysicsHandler() {
     }
 }
 
+void PhysicsHandler::DoTicks(size_t count) {
+
+    run.store(count);
+
+}
+
+std::array<float, 3> PhysicsHandler::CalculateEnergies() {
+    
+    std::array<float, 3> energies = {0,0,0};
+    for (auto& b : m_Softbodies) {
+        const std::array<float, 3> other = CalculateEnergy(*b);
+        energies[0] += other[0];
+        energies[1] += other[1];
+        energies[2] += other[2];
+    }
+    return energies;
+}
+
+std::array<float, 3> PhysicsHandler::CalculateEnergy(const SoftBody& body) {
+
+    std::array<float, 3> energies {0,0,0};
+    for (auto& n : body.worknodes) {
+    
+        energies[0] += glm::dot(n.velocity, n.velocity) * n.mass/2.0f;
+        if (body.global_accelerations.size() > 0)
+            energies[2] += -glm::dot(n.position, body.global_accelerations[0]) * n.mass;
+    }
+
+    for (auto &c : body.connections) {
+    
+        const float lengthdiff = c.GetLength(body.worknodes) - c.neutrallen;
+        energies[1] += body.K.load() * lengthdiff * lengthdiff/2.0f;
+
+    }
+    return energies;
+
+}
+
 void PhysicsHandler::AddSoftBody(Ref<SoftBody> body) {
     executing.lock();
     m_Softbodies.push_back(body);
+    executing.unlock();
+}
+
+void PhysicsHandler::ClearSoftBodies() {
+
+    executing.lock();
+    m_Softbodies.clear();
     executing.unlock();
 }
 
@@ -67,6 +112,10 @@ void PhysicsHandler::DrawUI() {
     if (ImGui::Button("Pause/Unpause")) {
         run.store((!run.load()) ? -1 : 0);
     }
+    bool st = singlethreaded.load();
+    if (ImGui::Checkbox("Single Threaded", &st)) {
+        singlethreaded.store(st);
+    }
 
     float ts = TS.load();
 
@@ -77,7 +126,6 @@ void PhysicsHandler::DrawUI() {
 
     for (size_t i = 0; i < m_Softbodies.size(); i++) {
         auto& body = *m_Softbodies[i];
-        body.copying.lock();
 
         char bodyname[20];
         sprintf(bodyname, "Body %lu", i);
@@ -96,7 +144,6 @@ void PhysicsHandler::DrawUI() {
             }
             ImGui::TreePop();
         }
-        body.copying.unlock();
     }
 }
 

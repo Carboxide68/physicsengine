@@ -27,6 +27,7 @@
 #include <type_traits> // std::common_type_t, std::decay_t, std::enable_if_t, std::is_void_v, std::invoke_result_t
 #include <utility>     // std::move
 
+
 // ============================================================================================= //
 //                                    Begin class thread_pool                                    //
 
@@ -35,6 +36,8 @@
  */
 typedef std::uint_fast32_t ui32;
 typedef std::uint_fast64_t ui64;
+#define MAX_THREADS (std::thread::hardware_concurrency() - 1)
+
 class thread_pool {
 
 public:
@@ -47,7 +50,7 @@ public:
      *
      * @param _thread_count The number of threads to use. The default value is the total number of hardware threads available, as reported by the implementation. With a hyperthreaded CPU, this will be twice the number of CPU cores. If the argument is zero, the default value will be used instead.
      */
-    thread_pool(const ui32 &_thread_count = std::thread::hardware_concurrency()) : thread_count(_thread_count ? _thread_count : std::thread::hardware_concurrency()), threads(new std::thread[_thread_count ? _thread_count : std::thread::hardware_concurrency()])
+    thread_pool(const ui32 &_thread_count = MAX_THREADS) : thread_count(_thread_count ? _thread_count : MAX_THREADS), threads(new std::thread[_thread_count ? _thread_count : MAX_THREADS])
     {
         create_threads();
     }
@@ -142,7 +145,7 @@ public:
             block_size = 1;
             num_blocks = (ui32)total_size > 1 ? (ui32)total_size : 1;
         }
-        std::atomic<ui32> blocks_running = 0;
+        std::atomic<ui32> blocks_running {0};
         for (ui32 t = 0; t < num_blocks; t++)
         {
             T start = ((T)(t * block_size) + the_first_index);
@@ -197,14 +200,14 @@ public:
      *
      * @param _thread_count The number of threads to use. The default value is the total number of hardware threads available, as reported by the implementation. With a hyperthreaded CPU, this will be twice the number of CPU cores. If the argument is zero, the default value will be used instead.
      */
-    void reset(const ui32 &_thread_count = std::thread::hardware_concurrency())
+    void reset(const ui32 &_thread_count = MAX_THREADS)
     {
         bool was_paused = paused;
         paused = true;
         wait_for_tasks();
         running = false;
         destroy_threads();
-        thread_count = _thread_count ? _thread_count : std::thread::hardware_concurrency();
+        thread_count = _thread_count ? _thread_count : MAX_THREADS;
         threads.reset(new std::thread[thread_count]);
         paused = was_paused;
         running = true;

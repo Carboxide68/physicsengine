@@ -14,6 +14,7 @@ struct PhysicsCtx {
 
     std::atomic<int>& run;
     std::atomic<bool>& stop;
+    std::atomic<bool>& singlethreaded;
     std::atomic<float>& TS;
     std::atomic<float>& time_passed;
 
@@ -30,13 +31,20 @@ public:
     void OnStart() override;
     void EachFrame() override;
 
+    void DoTicks(size_t count);
+
+    std::array<float, 3> CalculateEnergies();
+
     void AddSoftBody(Ref<SoftBody> body);
+    void ClearSoftBodies();
 	Ref<SoftBody> GetSoftBody(uint index) {return m_Softbodies[index];}
+
     std::atomic<float> time_passed {0.0};
     std::atomic<float> TS {0.0001};
     std::atomic<float> average_tick_time {1.0f};
     std::atomic<int> run {0};
     std::atomic<bool> stop {true};
+    std::atomic<bool> singlethreaded {false};
 
     std::mutex executing;
 
@@ -47,6 +55,8 @@ private:
     void DrawNodeUI(NodeData& nodedata, const Node& node);
 
     void DrawNodes();
+
+    static std::array<float, 3> CalculateEnergy(const SoftBody& body);
 
     std::vector<Ref<SoftBody>> m_Softbodies;
 

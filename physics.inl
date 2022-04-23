@@ -8,12 +8,15 @@ void PhysicsHandler::EngineMain(PhysicsCtx ctx) {
 
     std::deque<double> tick_times(30, 0.0);
     std::atomic<uint> copyings = {0};
-    thread_pool personal_threads = thread_pool();
-    personal_threads.sleep_duration = 0;
+    thread_pool personal_threads {};
 
     using clock = std::chrono::high_resolution_clock;
     while (!ctx.stop) {
-
+        if (ctx.singlethreaded.load())
+            personal_threads.sleep_duration = 1000;
+        else
+            personal_threads.sleep_duration = 0;
+        
         while (ctx.run && !ctx.stop) {
             
             FrameMarkStart(_physics_frame);
@@ -28,11 +31,11 @@ void PhysicsHandler::EngineMain(PhysicsCtx ctx) {
                 body->copying.unlock();
                 std::atomic<uint> counter = {0};
                 std::atomic<uint> tasks = {0};
-                if (body->worknodes.size() < 1000) {
+                if (ctx.singlethreaded.load()) {
                     SimulateTick(ctx, body, 0.f, 1.f, 1, counter);
                 } else {
                     const uint tmp = personal_threads.get_thread_count();
-                    const uint thread_count = (tmp < 2) ? 1 : tmp - 2;
+                    const uint thread_count = (tmp <= 2) ? 1 : tmp - 2;
                     {
                     ZoneScopedN("Launch Threads")
                     for (uint i = 0; i < thread_count; i++) {
@@ -64,10 +67,8 @@ void PhysicsHandler::EngineMain(PhysicsCtx ctx) {
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(7));
     }
-
     personal_threads.wait_for_tasks();
     PhysicsThreadPool.wait_for_tasks();
-
 }
 
 void PhysicsHandler::SimulateTick(PhysicsCtx& ctx, Ref<SoftBody> body, float start, float end, uint count, std::atomic<uint>& counter) {
@@ -87,14 +88,15 @@ void PhysicsHandler::SimulateTick(PhysicsCtx& ctx, Ref<SoftBody> body, float sta
         combined.resize(nodecount);
         result.resize(nodecount);
     }
+    const size_t s = (size_t)(nodecount * start);
+    const size_t e = (size_t)(nodecount * end);
 
     counter += 1;
     {
-    ZoneScopedN("Waiting")
     while (counter < count * 1) std::this_thread::sleep_for(std::chrono::microseconds(15));
     }
     CalculateVelocities(body, body->worknodes, start, end);
-    for (uint i = (uint)(nodecount * start); i < (uint)(nodecount * end); i++) {
+    for (uint i = s; i < e; i++) {
         derivative[i] = body->worknodes[i];
         result[i] = body->worknodes[i];
         combined[i] = body->worknodes[i];
@@ -102,21 +104,19 @@ void PhysicsHandler::SimulateTick(PhysicsCtx& ctx, Ref<SoftBody> body, float sta
  
     counter += 1;
     {
-    ZoneScopedN("Waiting")
     while (counter < count * 2) std::this_thread::sleep_for(std::chrono::microseconds(15));
     }
 
     //K2
     EulerIntegration(body, body->worknodes, body->worknodes, result, ctx.TS/2.f, start, end);
     CalculateVelocities(body, result, start, end);
-    for (uint i = (uint)(nodecount * start); i < (uint)(nodecount * end); i++) {
+    for (uint i = s; i < e; i++) {
         combined[i].velocity += result[i].velocity * 2.f;
         combined[i].acceleration += result[i].acceleration * 2.f;
     }
 
     counter += 1;
     {
-    ZoneScopedN("Waiting")
     while (counter < count * 3) std::this_thread::sleep_for(std::chrono::microseconds(15));
     }
 
@@ -127,7 +127,7 @@ void PhysicsHandler::SimulateTick(PhysicsCtx& ctx, Ref<SoftBody> body, float sta
     //K3
     EulerIntegration(body, body->worknodes, derivative, result, ctx.TS/2.f, start, end);
     CalculateVelocities(body, result, start, end);
-    for (uint i = (uint)(nodecount * start); i < (uint)(nodecount * end); i++) {
+    for (uint i = s; i < e; i++) {
         combined[i].velocity += result[i].velocity * 2.f;
         combined[i].acceleration += result[i].acceleration * 2.f;
     }
@@ -135,7 +135,6 @@ void PhysicsHandler::SimulateTick(PhysicsCtx& ctx, Ref<SoftBody> body, float sta
     counter += 1;
 
     {
-    ZoneScopedN("Waiting")
     while (counter < count * 4) std::this_thread::sleep_for(std::chrono::microseconds(15));
     }
 
@@ -146,7 +145,7 @@ void PhysicsHandler::SimulateTick(PhysicsCtx& ctx, Ref<SoftBody> body, float sta
     //K4
     EulerIntegration(body, body->worknodes, derivative, result, ctx.TS, start, end);
     CalculateVelocities(body, result, start, end);
-    for (uint i = (uint)(nodecount * start); i < (uint)(nodecount * end); i++) {
+    for (uint i = s; i < e; i++) {
         combined[i].velocity += result[i].velocity;
         combined[i].acceleration += result[i].acceleration;
     }
@@ -154,7 +153,6 @@ void PhysicsHandler::SimulateTick(PhysicsCtx& ctx, Ref<SoftBody> body, float sta
     counter += 1;
 
     {
-    ZoneScopedN("Waiting")
     while (counter < count * 5) std::this_thread::sleep_for(std::chrono::microseconds(15));
     }
 
@@ -167,7 +165,6 @@ void PhysicsHandler::SimulateTick(PhysicsCtx& ctx, Ref<SoftBody> body, float sta
 
     counter += 1;
     {
-    ZoneScopedN("Waiting")
     while (counter < count * 6) std::this_thread::sleep_for(std::chrono::microseconds(15));
     }
 
@@ -178,10 +175,10 @@ void PhysicsHandler::SimulateTick(PhysicsCtx& ctx, Ref<SoftBody> body, float sta
 
 void PhysicsHandler::EulerIntegration(Ref<SoftBody> host, std::vector<Node>& base, std::vector<Node>& derivative, std::vector<Node>& out, float TS, float start, float end) {
 
-    ZoneScoped
-
     const size_t nodesize = base.size();
-    for (uint i = (uint)(nodesize * start); i < (uint)(nodesize * end); i++) {
+    const size_t s = (size_t)(nodesize * start);
+    const size_t e = (size_t)(nodesize * end);
+    for (uint i = s; i < e; i++) {
         if (host->nodedata[i].is_locked.load()) continue;
         out[i].position = base[i].position + derivative[i].velocity * TS;
         out[i].velocity = base[i].velocity + derivative[i].acceleration * TS;
@@ -191,12 +188,13 @@ void PhysicsHandler::EulerIntegration(Ref<SoftBody> host, std::vector<Node>& bas
 
 void PhysicsHandler::CalculateVelocities(Ref<SoftBody> host, std::vector<Node>& nodes, float start, float end) {
 
-    ZoneScoped
-
     const float d = host->drag.load();
 
     const size_t nodesize = nodes.size();
-    for (uint i = (uint)(nodesize * start); i < (uint)(nodesize * end); i++) {
+    {
+    const size_t s = (size_t)(nodesize * start);
+    const size_t e = (size_t)(nodesize * end);
+    for (uint i = s; i < e; i++) {
         auto& n = nodes[i];
         n.acceleration = n.velocity * d * -1.0f/n.mass;
 		n.acceleration += n.force/n.mass;
@@ -207,9 +205,12 @@ void PhysicsHandler::CalculateVelocities(Ref<SoftBody> host, std::vector<Node>& 
             n.acceleration += force/n.mass;
         }
     }
+    }
 
     const size_t connectionsize = host->connections.size();
-    for (size_t i = (uint)(connectionsize * start); i < uint(connectionsize * end); i++) {
+    const size_t s = (size_t)(connectionsize * start);
+    const size_t e = (size_t)(connectionsize * end);
+    for (size_t i = s; i < e; i++) {
         auto& c = host->connections[i];
         auto& node1 = nodes[c.node1];
         auto& node2 = nodes[c.node2];
